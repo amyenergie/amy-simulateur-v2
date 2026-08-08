@@ -143,11 +143,6 @@ export default function ResultsPage() {
     return Math.round(monthlyBill * 12);
   }, [monthlyBill]);
 
-  const amortRapide = useMemo(() => {
-    if (!priceRange?.min || !annualBillEuro || annualBillEuro <= 0) return null;
-    return priceRange.min / annualBillEuro;
-  }, [priceRange, annualBillEuro]);
-
   const panelsCount = useMemo(() => {
     if (!powerRecommendation) return null;
     return Math.round((powerRecommendation * 1000) / 500);
@@ -158,12 +153,36 @@ export default function ResultsPage() {
     return Math.round(annualProdForReco * 1.0);
   }, [annualProdForReco]);
 
+  // Cout d'installation retenu pour l'amortissement (moyenne de la fourchette,
+  // pour rester representatif plutot que de prendre uniquement le minimum).
+  const estimatedInstallCost = useMemo(() => {
+    if (!priceRange) return null;
+    return Math.round((priceRange.min + priceRange.max) / 2);
+  }, [priceRange]);
+
+  // Economies annuelles estimees a partir de la production reellement valorisee
+  // (kWh produits x prix du kWh), plafonnees par la facture actuelle car on ne
+  // peut pas economiser plus que ce que l'on depense aujourd'hui.
+  const annualSavingsEuro = useMemo(() => {
+    const production = prodValoriseeVirtuelle || annualProdForReco;
+    if (!production) return null;
+    const PRIX_KWH_BASE = 0.28;
+    const solarSavings = production * PRIX_KWH_BASE;
+    if (annualBillEuro && annualBillEuro > 0) return Math.min(solarSavings, annualBillEuro);
+    return solarSavings;
+  }, [prodValoriseeVirtuelle, annualProdForReco, annualBillEuro]);
+
+  const amortRapide = useMemo(() => {
+    if (!estimatedInstallCost || !annualSavingsEuro || annualSavingsEuro <= 0) return null;
+    return estimatedInstallCost / annualSavingsEuro;
+  }, [estimatedInstallCost, annualSavingsEuro]);
+
   const techLine =
     techSummaryFromState ||
     `Gisement ${grade.grade} | Spécifique ${specific ?? "—"} kWh/kWc/an | Production estimée ${annualProdForReco ?? "—"} kWh/an`;
 
-  // Genere une proposition commerciale PDF entierement construite en code
-  // (logo + textes + stats), sans dependre de fichiers externes fragiles.
+  // Genere la proposition commerciale PDF (page 1 personnalisee + pages 2-8
+  // officielles) a partir des donnees deja calculees sur cette page.
   async function downloadProposalPdf() {
     if (pdfStatus === "generating") return;
     if (!powerRecommendation || !priceRange) return;
@@ -178,20 +197,24 @@ export default function ResultsPage() {
         economies30 += production * (PRIX_KWH_BASE * Math.pow(1.03, year));
       }
 
-      const logoBytes = await fetch("/logos/amy.png").then((r) => r.arrayBuffer());
+      const [heroBytes, logoBytes, staticBytes] = await Promise.all([
+        fetch("/logos/pdf-hero.jpg").then((r) => r.arrayBuffer()),
+        fetch("/logos/amy.png").then((r) => r.arrayBuffer()),
+        fetch("/logos/pdf-static-pages.pdf").then((r) => r.arrayBuffer()),
+      ]);
 
-      const PAGE_W = 595.28;
-      const PAGE_H = 841.89;
-      const MARGIN = 48;
+      const PAGE_W = 841.92;
+      const PAGE_H = 594.96;
+      const MARGIN = 34;
       const NAVY = rgb(23 / 255, 33 / 255, 98 / 255);
       const CORAL = rgb(224 / 255, 89 / 255, 46 / 255);
-      const GRAY = rgb(90 / 255, 95 / 255, 138 / 255);
       const WHITE = rgb(1, 1, 1);
-      const DARK = rgb(0.2, 0.2, 0.25);
+      const BLACK = rgb(0, 0, 0);
 
       const pdfDoc = await PDFDocument.create();
       const helv = await pdfDoc.embedFont(StandardFonts.Helvetica);
       const helvBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+      const heroImage = await pdfDoc.embedJpg(heroBytes);
       const logoImage = await pdfDoc.embedPng(logoBytes);
 
       const page = pdfDoc.addPage([PAGE_W, PAGE_H]);
@@ -200,82 +223,58 @@ export default function ResultsPage() {
       const lastName = safeText(formData?.lastName) || "Nom";
       const address = safeText(formData?.address) || "Adresse non renseignee";
 
-      page.drawRectangle({ x: 0, y: PAGE_H - 170, width: PAGE_W, height: 170, color: NAVY });
+      page.drawImage(heroImage, { x: 0, y: 0, width: PAGE_W, height: PAGE_H });
 
-      const logoW = 110;
-      const logoH = (110 * 138) / 349;
-      page.drawImage(logoImage, { x: MARGIN, y: PAGE_H - 55 - logoH, width: logoW, height: logoH });
+      const logoW = 118;
+      const logoH = (118 * 138) / 349;
+      page.drawImage(logoImage, { x: MARGIN, y: PAGE_H - MARGIN - logoH, width: logoW, height: logoH });
 
-      page.drawText("PROPOSITION PHOTOVOLTAIQUE", {
-        x: MARGIN,
-        y: PAGE_H - 100,
-        size: 10,
-        font: helvBold,
-        color: rgb(0.75, 0.85, 1),
-      });
-      page.drawText(`${firstName} ${lastName}`, {
-        x: MARGIN,
-        y: PAGE_H - 125,
-        size: 20,
-        font: helvBold,
-        color: WHITE,
-      });
-      page.drawText(address, { x: MARGIN, y: PAGE_H - 148, size: 11, font: helv, color: rgb(0.85, 0.88, 1) });
+      const topLabel = "PROPOSITION PHOTOVOLTAIQUE";
+      const topLabelW = helvBold.widthOfTextAtSize(topLabel, 9);
+      page.drawText(topLabel, { x: PAGE_W - MARGIN - topLabelW, y: PAGE_H - MARGIN - 8, size: 9, font: helvBold, color: WHITE });
 
-      let y = PAGE_H - 220;
-      const boxH = 78;
-      const boxGap = 12;
+      const preparedY = PAGE_H * 0.62;
+      const addrLine = `${firstName} ${lastName} — ${address}`;
+      const headline1 = "Decouvrez votre projet";
+      const headline2 = "photovoltaique";
+
+      const wAddr = helv.widthOfTextAtSize(addrLine, 15);
+      const wH1 = helvBold.widthOfTextAtSize(headline1, 30);
+      const wH2 = helvBold.widthOfTextAtSize(headline2, 30);
+      const blockW = Math.max(wAddr, wH1, wH2) + 34;
+
+      page.drawRectangle({ x: MARGIN - 12, y: preparedY - 96, width: blockW, height: 128, color: BLACK, opacity: 0.3 });
+
+      page.drawText("PREPARE POUR", { x: MARGIN, y: preparedY + 26, size: 9, font: helvBold, color: WHITE });
+      page.drawText(addrLine, { x: MARGIN, y: preparedY, size: 15, font: helv, color: WHITE });
+      page.drawText(headline1, { x: MARGIN, y: preparedY - 45, size: 30, font: helvBold, color: WHITE });
+      page.drawText(headline2, { x: MARGIN, y: preparedY - 80, size: 30, font: helvBold, color: WHITE });
+
+      const boxY = 28;
+      const boxH = 118;
+      const boxGap = 14;
       const boxW = (PAGE_W - 2 * MARGIN - 2 * boxGap) / 3;
+      const x1 = MARGIN;
+      const x2 = x1 + boxW + boxGap;
+      const x3 = x2 + boxW + boxGap;
 
       function statBox(x: number, label: string, value: string, sub: string, coral?: boolean) {
-        page.drawRectangle({ x, y, width: boxW, height: boxH, color: coral ? CORAL : rgb(0.96, 0.96, 0.98) });
-        page.drawText(label, { x: x + 12, y: y + boxH - 20, size: 7.5, font: helv, color: coral ? WHITE : GRAY });
-        page.drawText(value, { x: x + 12, y: y + boxH - 45, size: 16, font: helvBold, color: coral ? WHITE : NAVY });
-        page.drawText(sub, { x: x + 12, y: y + 12, size: 7.5, font: helv, color: coral ? rgb(1, 0.9, 0.85) : GRAY });
+        page.drawRectangle({ x, y: boxY, width: boxW, height: boxH, color: coral ? CORAL : WHITE, opacity: coral ? 0.92 : 0.82 });
+        const labelColor = coral ? WHITE : rgb(90 / 255, 95 / 255, 138 / 255);
+        const valueColor = coral ? WHITE : NAVY;
+        const subColor = coral ? rgb(250 / 255, 235 / 255, 227 / 255) : rgb(90 / 255, 95 / 255, 138 / 255);
+        page.drawText(label, { x: x + 18, y: boxY + boxH - 26, size: 9, font: helv, color: labelColor });
+        page.drawText(value, { x: x + 18, y: boxY + boxH - 60, size: 26, font: helvBold, color: valueColor });
+        page.drawText(sub, { x: x + 18, y: boxY + 16, size: 9, font: helv, color: subColor });
       }
 
-      statBox(MARGIN, "PUISSANCE INSTALLEE", `${powerRecommendation.toFixed(2)} kWc`, `${panelsCount ?? "—"} panneaux estimes`);
-      statBox(MARGIN + boxW + boxGap, "PRODUCTION ANNUELLE", `${fmtIntPdf(production)} kWh`, "chaque annee");
-      statBox(MARGIN + 2 * (boxW + boxGap), "ECONOMIES ESTIMEES", `${fmtIntPdf(economies30)} €`, "sur 30 ans", true);
+      statBox(x1, "PUISSANCE INSTALLEE", `${powerRecommendation.toFixed(2)} kWc`, `${panelsCount ?? "—"} panneaux estimes`);
+      statBox(x2, "PRODUCTION ANNUELLE", `${fmtIntPdf(production)} kWh`, "Sur votre toiture, chaque annee");
+      statBox(x3, "ECONOMIES TOTALES", `${fmtIntPdf(economies30)} €`, "sur 30 ans", true);
 
-      y -= 46;
-      page.drawText("Votre potentiel solaire", { x: MARGIN, y, size: 14, font: helvBold, color: NAVY });
-      y -= 24;
-
-      const bodyLines = [
-        `Gisement solaire estime : ${grade.label} (${grade.grade}).`,
-        `Production specifique : ${specific ? fmtIntPdf(specific) + " kWh/kWc/an" : "—"}.`,
-        `Facture annuelle actuelle : ${annualBillEuro ? fmtIntPdf(annualBillEuro) + " €" : "—"}.`,
-        `Amortissement estime : ${amortRapide ? amortRapide.toFixed(1) + " ans" : "—"}.`,
-      ];
-      bodyLines.forEach((line) => {
-        page.drawText(line, { x: MARGIN, y, size: 11, font: helv, color: DARK });
-        y -= 18;
-      });
-
-      y -= 22;
-      page.drawText("Prochaines etapes", { x: MARGIN, y, size: 14, font: helvBold, color: NAVY });
-      y -= 24;
-
-      const steps = [
-        "1. Etude technique complete offerte par un conseiller AMY Energie.",
-        "2. Visite terrain et validation de la configuration finale.",
-        "3. Demarches administratives prises en charge (mairie, Consuel, raccordement).",
-        "4. Installation et mise en service.",
-      ];
-      steps.forEach((line) => {
-        page.drawText(line, { x: MARGIN, y, size: 11, font: helv, color: DARK });
-        y -= 18;
-      });
-
-      page.drawRectangle({ x: 0, y: 0, width: PAGE_W, height: 46, color: NAVY });
-      page.drawText("AMY ENERGIE  -  contact@amy-energie.fr  -  amy-energie.fr", {
-        x: MARGIN,
-        y: 18,
-        size: 9,
-        font: helv,
-        color: WHITE,
-      });
+      const staticDoc = await PDFDocument.load(staticBytes);
+      const copiedPages = await pdfDoc.copyPages(staticDoc, staticDoc.getPageIndices());
+      copiedPages.forEach((p) => pdfDoc.addPage(p));
 
       const pdfBytes = await pdfDoc.save();
       const blob = new Blob([pdfBytes], { type: "application/pdf" });
@@ -360,10 +359,10 @@ export default function ResultsPage() {
                 </div>
 
                 <div className="rounded-2xl bg-white border border-black/10 p-5 shadow-sm">
-                  <div className="text-gray-600 text-sm">Amortissement rapide</div>
+                  <div className="text-gray-600 text-sm">Amortissement estimé</div>
                   <div className="text-[#0b2b6f] text-3xl mt-1">{amortRapide ? `${amortRapide.toFixed(1)} ans` : "—"}</div>
                   <div className="text-gray-500 text-xs mt-2">
-                    Coût min / facture annuelle ({formatEuro(annualBillEuro)})
+                    Investissement ~{formatEuro(estimatedInstallCost)} · Économies ~{formatEuro(annualSavingsEuro)}/an
                   </div>
                 </div>
               </div>
