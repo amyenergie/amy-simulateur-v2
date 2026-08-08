@@ -141,6 +141,7 @@ export default function SolarForm() {
 
   const [mapCenter, setMapCenter] = useState(defaultCenter);
   const [mapType, setMapType] = useState<"satellite" | "roadmap">("satellite");
+  const [mapInstance, setMapInstance] = useState<google.maps.Map | null>(null);
   const [houseConfirmed, setHouseConfirmed] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -249,6 +250,20 @@ export default function SolarForm() {
     setPvgisError(null);
     setHouseConfirmed(false);
   };
+
+  // Google Maps peut se retrouver avec un conteneur mesure a 0 au moment de
+  // l'initialisation (montage dans une transition/anime, StrictMode, etc.).
+  // On force un resize + un recentrage a chaque fois qu'on a une carte prete
+  // et des coordonnees a afficher, pour garantir que les tuiles se chargent.
+  useEffect(() => {
+    if (!mapInstance) return;
+    const id = window.setTimeout(() => {
+      window.google?.maps?.event?.trigger(mapInstance, "resize");
+      mapInstance.setCenter(mapCenter);
+      mapInstance.setZoom(19);
+    }, 150);
+    return () => window.clearTimeout(id);
+  }, [mapInstance, mapCenter]);
 
   const handleGeolocation = () => {
     if (!navigator.geolocation) return;
@@ -520,7 +535,7 @@ export default function SolarForm() {
 
   return (
     <div
-      className="relative min-h-screen w-full overflow-hidden text-white"
+      className="relative min-h-[100dvh] w-full overflow-hidden text-white"
       style={{
         fontFamily: "'Lato', sans-serif",
         background: "linear-gradient(160deg, #0d1240 0%, #172162 38%, #0c3b4d 68%, #063a30 100%)",
@@ -584,7 +599,7 @@ export default function SolarForm() {
         </button>
       )}
 
-      <div className="relative w-full h-screen">
+      <div className="relative w-full h-[100dvh]">
         <AnimatePresence mode="wait">
           {currentStep === 1 && (
             <motion.div
@@ -603,6 +618,14 @@ export default function SolarForm() {
                   mapTypeId={mapType}
                   options={{ disableDefaultUI: true, zoomControl: true, tilt: 0 }}
                   onClick={handleMapClick}
+                  onLoad={(map) => {
+                    setMapInstance(map);
+                    window.setTimeout(() => {
+                      window.google?.maps?.event?.trigger(map, "resize");
+                      map.setCenter(mapCenter);
+                    }, 150);
+                  }}
+                  onUnmount={() => setMapInstance(null)}
                 >
                   {formData.coordinates && (
                     <Marker position={formData.coordinates} draggable onDragEnd={handleMarkerDragEnd} />
