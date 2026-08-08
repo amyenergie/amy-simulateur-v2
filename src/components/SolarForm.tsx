@@ -755,7 +755,7 @@ export default function SolarForm() {
           {currentStep === 2 && (
             <motion.div
               key="step2"
-              className="absolute inset-0 flex flex-col items-center justify-center px-8"
+              className="absolute inset-0 flex flex-col items-center justify-center px-4 sm:px-8"
               style={{ paddingTop: "110px", paddingBottom: "40px" }}
               initial={{ opacity: 0, y: 22 }}
               animate={{ opacity: 1, y: 0 }}
@@ -802,7 +802,7 @@ export default function SolarForm() {
           {currentStep === 3 && (
             <motion.div
               key="step3"
-              className="absolute inset-0 flex flex-col items-center justify-center px-8"
+              className="absolute inset-0 flex flex-col items-center justify-center px-4 sm:px-8"
               style={{ paddingTop: "110px", paddingBottom: "40px" }}
               initial={{ opacity: 0, y: 22 }}
               animate={{ opacity: 1, y: 0 }}
@@ -845,7 +845,7 @@ export default function SolarForm() {
           {currentStep === 4 && (
             <motion.div
               key="step4"
-              className="absolute inset-0 flex flex-col items-center justify-center px-8"
+              className="absolute inset-0 flex flex-col items-center justify-center px-4 sm:px-8"
               style={{ paddingTop: "110px", paddingBottom: "40px" }}
               initial={{ opacity: 0, y: 22 }}
               animate={{ opacity: 1, y: 0 }}
@@ -894,7 +894,7 @@ export default function SolarForm() {
           {currentStep === 5 && (
             <motion.div
               key="step5"
-              className="absolute inset-0 flex flex-col items-center justify-center px-8"
+              className="absolute inset-0 flex flex-col items-center justify-center px-4 sm:px-8"
               style={{ paddingTop: "110px", paddingBottom: "40px" }}
               initial={{ opacity: 0, y: 22 }}
               animate={{ opacity: 1, y: 0 }}
@@ -936,7 +936,7 @@ export default function SolarForm() {
           {currentStep === 6 && (
             <motion.div
               key="step6"
-              className="absolute inset-0 flex flex-col items-center justify-center px-8"
+              className="absolute inset-0 flex flex-col items-center justify-center px-4 sm:px-8"
               style={{ paddingTop: "110px", paddingBottom: "40px" }}
               initial={{ opacity: 0, y: 22 }}
               animate={{ opacity: 1, y: 0 }}
@@ -1040,7 +1040,7 @@ export default function SolarForm() {
           {currentStep === 7 && (
             <motion.div
               key="step7"
-              className="absolute inset-0 flex flex-col items-center justify-center px-8"
+              className="absolute inset-0 flex flex-col items-center justify-center px-4 sm:px-8"
               style={{ paddingTop: "110px", paddingBottom: "40px" }}
               initial={{ opacity: 0, y: 22 }}
               animate={{ opacity: 1, y: 0 }}
@@ -1082,7 +1082,7 @@ export default function SolarForm() {
           {currentStep === 8 && (
             <motion.div
               key="step8"
-              className="absolute inset-0 flex flex-col items-center justify-center px-8"
+              className="absolute inset-0 flex flex-col items-center justify-center px-4 sm:px-8"
               style={{ paddingTop: "110px", paddingBottom: "40px" }}
               initial={{ opacity: 0, y: 22 }}
               animate={{ opacity: 1, y: 0 }}
