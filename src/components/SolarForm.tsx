@@ -5,16 +5,13 @@ import { GoogleMap, Marker, StandaloneSearchBox } from "@react-google-maps/api";
 import {
   Home,
   Building2,
-  Users,
-  Ruler,
   ChevronRight,
-  ChevronLeft,
-  Send,
   AlertCircle,
   Locate,
   User,
   Mail,
   Phone,
+  Check,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { trackQuoteConversion } from "../lib/analytics";
@@ -40,9 +37,9 @@ interface FormData {
   message?: string;
 }
 
-const defaultCenter = { lat: 43.269827, lng: 5.395887 };
+const TOTAL_STEPS = 8;
 
-const containerStyle = { width: "100%", height: "440px" };
+const defaultCenter = { lat: 43.269827, lng: 5.395887 };
 
 const getPriceRange = (power: number): { min: number; max: number } => {
   switch (power) {
@@ -76,13 +73,47 @@ function gradeFromSpecific(s: number | null) {
   return { grade: "D", label: "Gisement correct" };
 }
 
-function badgeClasses(grade: string) {
-  if (grade === "A") return "bg-emerald-100 text-emerald-900 border-emerald-200";
-  if (grade === "B") return "bg-green-100 text-green-900 border-green-200";
-  if (grade === "C") return "bg-yellow-100 text-yellow-900 border-yellow-200";
-  if (grade === "D") return "bg-orange-100 text-orange-900 border-orange-200";
-  return "bg-gray-100 text-[#1A1D29] border-[#E5E3DD]";
-}
+const BUILDING_OPTIONS: { value: FormData["buildingType"]; label: string }[] = [
+  { value: "house", label: "Maison individuelle" },
+  { value: "apartment", label: "Appartement" },
+];
+
+const SURFACE_OPTIONS: { value: FormData["surface"]; label: string }[] = [
+  { value: "50", label: "Moins de 50 m²" },
+  { value: "50-100", label: "50 à 100 m²" },
+  { value: "100-150", label: "100 à 150 m²" },
+  { value: "150+", label: "Plus de 150 m²" },
+];
+
+const HEATING_OPTIONS: { value: FormData["heatingType"]; label: string }[] = [
+  { value: "electric", label: "Électricité" },
+  { value: "gas", label: "Gaz" },
+  { value: "fuel", label: "Fioul" },
+  { value: "wood", label: "Bois" },
+  { value: "other", label: "Autre" },
+];
+
+const ROOF_OPTIONS: { value: FormData["roofType"]; label: string }[] = [
+  { value: "flat", label: "Toiture plate" },
+  { value: "mono", label: "Mono-pente" },
+  { value: "dual", label: "2 pans" },
+  { value: "quad", label: "4 pans" },
+  { value: "other", label: "Autre" },
+];
+
+const optBase =
+  "border-[1.5px] rounded-[18px] p-5 cursor-pointer transition-all text-left flex flex-col gap-3";
+const optOff = "border-white/15 bg-white/[0.06] hover:border-[#00b67a] hover:-translate-y-[3px] hover:bg-white/10";
+const optOn = "border-[#00b67a] bg-[#00d38a]/15 shadow-[0_12px_28px_rgba(0,182,122,0.28)]";
+
+const kickerClass =
+  "inline-flex items-center gap-2 text-[13px] font-semibold text-[#bfffe4] bg-[#00d38a]/[0.14] border border-[#00d38a]/30 px-[15px] py-[7px] rounded-full mb-6";
+
+const nextBtnClass =
+  "border-none rounded-full px-9 py-[18px] text-[16px] font-bold cursor-pointer inline-flex items-center gap-2.5 transition-transform bg-gradient-to-br from-[#00b67a] to-[#00d38a] text-[#04241a] shadow-[0_16px_34px_rgba(0,182,122,0.4)] hover:-translate-y-0.5 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0";
+
+const secondaryBtnClass =
+  "bg-white/[0.08] border-[1.5px] border-white/20 text-white rounded-full px-[26px] py-4 text-[14.5px] font-semibold cursor-pointer hover:bg-white/[0.14]";
 
 export default function SolarForm() {
   const navigate = useNavigate();
@@ -95,7 +126,7 @@ export default function SolarForm() {
     coordinates: null,
     buildingType: "",
     surface: "",
-    residents: "",
+    residents: "3",
     heatingType: "",
     billType: "monthly",
     billUnit: "euros",
@@ -109,6 +140,8 @@ export default function SolarForm() {
   });
 
   const [mapCenter, setMapCenter] = useState(defaultCenter);
+  const [mapType, setMapType] = useState<"satellite" | "roadmap">("satellite");
+  const [houseConfirmed, setHouseConfirmed] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
@@ -193,6 +226,10 @@ export default function SolarForm() {
     };
   }, [formData.coordinates?.lat, formData.coordinates?.lng]);
 
+  const annual = toNumber(pvgisData?.outputs?.totals?.fixed?.E_y);
+  const specific = annual ? Math.round(annual / pvPeakpower) : null;
+  const grade = gradeFromSpecific(specific);
+
   async function sendLeadToGoogleSheets(payload: any) {
     try {
       const r = await fetch(`${FUNCTIONS_BASE}/.netlify/functions/lead`, {
@@ -207,6 +244,12 @@ export default function SolarForm() {
     }
   }
 
+  const resetLocationState = () => {
+    setPvgisData(null);
+    setPvgisError(null);
+    setHouseConfirmed(false);
+  };
+
   const handleGeolocation = () => {
     if (!navigator.geolocation) return;
 
@@ -216,8 +259,7 @@ export default function SolarForm() {
         const lat = position.coords.latitude;
         const lng = position.coords.longitude;
 
-        setPvgisData(null);
-        setPvgisError(null);
+        resetLocationState();
 
         setMapCenter({ lat, lng });
         setFormData((prev) => ({ ...prev, coordinates: { lat, lng } }));
@@ -253,8 +295,7 @@ export default function SolarForm() {
     const lat = place.geometry.location.lat();
     const lng = place.geometry.location.lng();
 
-    setPvgisData(null);
-    setPvgisError(null);
+    resetLocationState();
 
     setMapCenter({ lat, lng });
     setFormData((prev) => ({
@@ -262,6 +303,34 @@ export default function SolarForm() {
       address: place.formatted_address || "",
       coordinates: { lat, lng },
     }));
+  };
+
+  const handleMapClick = (e: google.maps.MapMouseEvent) => {
+    if (!e.latLng) return;
+    const lat = e.latLng.lat();
+    const lng = e.latLng.lng();
+
+    resetLocationState();
+    setFormData((prev) => ({ ...prev, coordinates: { lat, lng } }));
+
+    fetch(
+      `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=AIzaSyCDNh9_8-PUo1AJ6DgzPV0I_-3lsir8Pd0`
+    )
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.results && data.results[0]) {
+          setFormData((prev) => ({
+            ...prev,
+            address: data.results[0].formatted_address,
+            coordinates: { lat, lng },
+          }));
+        }
+      });
+  };
+
+  const handleMarkerDragEnd = (e: google.maps.MapMouseEvent) => {
+    if (!e.latLng) return;
+    handleMapClick(e);
   };
 
   const handleChange = (
@@ -274,13 +343,18 @@ export default function SolarForm() {
     }
   };
 
+  const selectAndAdvance = (patch: Partial<FormData>) => {
+    setFormData((prev) => ({ ...prev, ...patch }));
+    setTimeout(() => setCurrentStep((s) => Math.min(s + 1, TOTAL_STEPS)), 260);
+  };
+
   const validateStep = () => {
     const newErrors: any = {};
 
     switch (currentStep) {
       case 1:
-        if (!formData.address) newErrors.address = "L'adresse est requise";
-        if (!formData.coordinates) newErrors.coordinates = "Veuillez sélectionner une adresse valide";
+        if (!formData.address || !formData.coordinates) newErrors.address = "Sélectionnez une adresse valide";
+        if (!houseConfirmed) newErrors.coordinates = "Confirmez votre maison sur la carte";
         break;
       case 2:
         if (!formData.buildingType) newErrors.buildingType = "Le type de bien est requis";
@@ -288,14 +362,11 @@ export default function SolarForm() {
       case 3:
         if (!formData.surface) newErrors.surface = "La surface est requise";
         break;
-      case 4:
-        if (!formData.residents) newErrors.residents = "Le nombre d'habitants est requis";
-        break;
       case 5:
         if (!formData.heatingType) newErrors.heatingType = "Le type de chauffage est requis";
         break;
       case 6:
-        if (!formData.billValue) newErrors.billValue = "Le montant est requis";
+        if (!formData.billValue || parseFloat(formData.billValue) <= 0) newErrors.billValue = "Le montant est requis";
         break;
       case 7:
         if (!formData.roofType) newErrors.roofType = "Le type de toiture est requis";
@@ -313,13 +384,23 @@ export default function SolarForm() {
     return Object.keys(newErrors).length === 0;
   };
 
+  const contactValid = useMemo(() => {
+    const first = formData.firstName.trim();
+    const last = formData.lastName.trim();
+    const email = formData.email.trim();
+    const phone = formData.phone.trim();
+    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    const phoneOk = phone.replace(/[^0-9]/g, "").length >= 10;
+    return first.length > 1 && last.length > 1 && emailOk && phoneOk;
+  }, [formData.firstName, formData.lastName, formData.email, formData.phone]);
+
   const handleNext = () => {
     if (!validateStep()) return;
-    if (currentStep === 8) handleSubmit();
+    if (currentStep === TOTAL_STEPS) handleSubmit();
     else setCurrentStep((p) => p + 1);
   };
 
-  const handlePrevious = () => setCurrentStep((p) => p - 1);
+  const handlePrevious = () => setCurrentStep((p) => Math.max(1, p - 1));
 
   const handleSubmit = async () => {
     if (isSubmitting) return;
@@ -330,10 +411,7 @@ export default function SolarForm() {
     );
 
     try {
-      const annual = toNumber(pvgisData?.outputs?.totals?.fixed?.E_y);
-      const specific = annual ? Math.round(annual / pvPeakpower) : null;
-      const g = gradeFromSpecific(specific);
-      const techSummary = `Gisement ${g.grade} | Spécifique ${specific ?? "—"} kWh/kWc/an | Hypothèses: ${pvPeakpower} kWc, pente ${pvAngle}°, azimut ${pvAspect}°, pertes ${pvLoss}%`;
+      const techSummary = `Gisement ${grade.grade} | Spécifique ${specific ?? "—"} kWh/kWc/an | Hypothèses: ${pvPeakpower} kWc, pente ${pvAngle}°, azimut ${pvAspect}°, pertes ${pvLoss}%`;
 
       const resultsState = {
         powerRecommendation,
@@ -416,6 +494,15 @@ export default function SolarForm() {
     }
   };
 
+  const billChips = useMemo(() => {
+    const eurosMonthly = [60, 90, 120, 180, 250];
+    const eurosAnnual = [720, 1080, 1440, 2160, 3000];
+    const kwhMonthly = [200, 350, 500, 700, 1000];
+    const kwhAnnual = [2500, 4200, 6000, 8400, 12000];
+    if (formData.billUnit === "euros") return formData.billType === "monthly" ? eurosMonthly : eurosAnnual;
+    return formData.billType === "monthly" ? kwhMonthly : kwhAnnual;
+  }, [formData.billUnit, formData.billType]);
+
   if (showLoader && pendingNavigate) {
     return (
       <PreconisationLoader
@@ -428,502 +515,638 @@ export default function SolarForm() {
     );
   }
 
-  const annual = toNumber(pvgisData?.outputs?.totals?.fixed?.E_y);
-  const specific = annual ? Math.round(annual / pvPeakpower) : null;
-  const g = gradeFromSpecific(specific);
+  const hue = (currentStep - 1) * 24;
+  const progressPct = (currentStep / TOTAL_STEPS) * 100;
 
   return (
-    <div className="min-h-screen w-full bg-white flex flex-col" style={{ fontFamily: "'Lato', sans-serif" }}>
-      <div className="w-full max-w-2xl mx-auto flex-1 flex flex-col px-6 py-10 md:py-14">
-        <div className="mb-10">
-          <div className="flex items-center justify-between mb-5">
-            <span className="text-[15px] font-extrabold text-[#1A1D29] tracking-tight">AMY ENERGIE</span>
-            <span className="text-xs font-medium text-[#6B6F7B] bg-[#F5F4F1] border border-[#E5E3DD] rounded-full px-3 py-1.5">
-              Étape {currentStep}/8
-            </span>
-          </div>
-          <div className="h-1 bg-[#E5E3DD] rounded-full overflow-hidden">
-            <div
-              className="h-full bg-[#E0592E] rounded-full transition-all duration-500"
-              style={{ width: `${(currentStep / 8) * 100}%` }}
-            />
-          </div>
+    <div
+      className="relative min-h-screen w-full overflow-hidden text-white"
+      style={{
+        fontFamily: "'Lato', sans-serif",
+        background: "linear-gradient(160deg, #0d1240 0%, #172162 38%, #0c3b4d 68%, #063a30 100%)",
+      }}
+    >
+      {currentStep !== 1 && (
+        <div
+          className="absolute inset-0 pointer-events-none transition-[filter] duration-500"
+          style={{ filter: `hue-rotate(${hue}deg)` }}
+        >
+          <motion.div
+            className="absolute rounded-full blur-[70px] opacity-[0.55] w-[520px] h-[520px] bg-[#00d38a]"
+            style={{ top: "-180px", right: "-140px" }}
+            animate={{ x: [0, -30, 0], y: [0, 40, 0] }}
+            transition={{ duration: 14, repeat: Infinity, ease: "easeInOut" }}
+          />
+          <motion.div
+            className="absolute rounded-full blur-[70px] opacity-[0.35] w-[420px] h-[420px] bg-[#ff8a3d]"
+            style={{ bottom: "-160px", left: "-120px" }}
+            animate={{ x: [0, 40, 0], y: [0, -30, 0] }}
+            transition={{ duration: 16, repeat: Infinity, ease: "easeInOut" }}
+          />
+          <motion.div
+            className="absolute rounded-full blur-[70px] opacity-25 w-[300px] h-[300px] bg-[#3aa0ff] left-1/2 -translate-x-1/2"
+            style={{ top: "40%" }}
+            animate={{ y: [0, -40, 0] }}
+            transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
+          />
         </div>
+      )}
 
-        <div className="flex-1 flex flex-col justify-center">
+      <div className="absolute top-0 left-0 right-0 h-1 bg-white/[0.14] z-[6]">
+        <div
+          className="h-full bg-gradient-to-r from-[#00b67a] to-[#00d38a] transition-all duration-500"
+          style={{ width: `${progressPct}%` }}
+        />
+      </div>
+
+      <div className="absolute top-5 left-0 right-0 z-[6] flex items-center justify-between px-7">
+        <div className="flex items-center gap-2 font-bold text-[14.5px] opacity-90" style={{ fontFamily: "'Poppins', sans-serif" }}>
+          <span className="w-[26px] h-[26px] rounded-[7px] bg-gradient-to-br from-[#ff8a3d] via-[#ffc85c] to-[#3aa0ff] flex items-center justify-center">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#0d1240" strokeWidth="2.4" strokeLinecap="round">
+              <circle cx="12" cy="12" r="4" />
+              <path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" />
+            </svg>
+          </span>
+          AMY ENERGIE
+        </div>
+        <div className="text-xs text-[#cfe9ff] bg-white/[0.08] border border-white/[0.16] px-[13px] py-[6px] rounded-full backdrop-blur-sm">
+          {currentStep} / {TOTAL_STEPS}
+        </div>
+      </div>
+
+      {currentStep > 1 && (
+        <button
+          type="button"
+          onClick={handlePrevious}
+          className="absolute top-16 left-7 z-[6] w-[38px] h-[38px] rounded-full bg-white/10 border border-white/[0.18] text-white flex items-center justify-center text-xl backdrop-blur-sm hover:bg-white/20"
+        >
+          &#8249;
+        </button>
+      )}
+
+      <div className="relative w-full h-screen">
         <AnimatePresence mode="wait">
           {currentStep === 1 && (
             <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="space-y-6 w-full"
+              key="step1"
+              className="absolute inset-0"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.4 }}
             >
-              <h3 className="text-[26px] md:text-3xl font-extrabold text-[#1A1D29] mb-6 text-center">Où se situe votre projet ?</h3>
+              <div className="absolute inset-0">
+                <GoogleMap
+                  mapContainerStyle={{ width: "100%", height: "100%" }}
+                  center={mapCenter}
+                  zoom={19}
+                  mapTypeId={mapType}
+                  options={{ disableDefaultUI: true, zoomControl: true, tilt: 0 }}
+                  onClick={handleMapClick}
+                >
+                  {formData.coordinates && (
+                    <Marker position={formData.coordinates} draggable onDragEnd={handleMarkerDragEnd} />
+                  )}
+                </GoogleMap>
+              </div>
 
-              <div className="space-y-4">
-                <div>
-                  <label htmlFor="address" className="block text-sm font-medium text-[#6B6F7B] mb-1">
-                    Adresse complète
-                  </label>
+              <div
+                className="absolute top-0 left-0 right-0 h-[280px] pointer-events-none z-[2]"
+                style={{ background: "linear-gradient(180deg, rgba(9,14,50,.85), rgba(9,14,50,0))" }}
+              />
+              <div
+                className="absolute bottom-0 left-0 right-0 h-[260px] pointer-events-none z-[2]"
+                style={{ background: "linear-gradient(0deg, rgba(9,14,50,.88), rgba(9,14,50,0))" }}
+              />
 
-                  <div className="flex gap-2">
-                    <div className="flex-1 relative">
-                      <StandaloneSearchBox onLoad={onLoadSearchBox} onPlacesChanged={onPlacesChanged}>
-                        <input
-                          type="text"
-                          id="address"
-                          name="address"
-                          value={formData.address}
-                          onChange={handleChange}
-                          className={`w-full px-4 py-3 rounded-lg border ${
-                            errors.address ? "border-red-500" : "border-[#E5E3DD]"
-                          } bg-[#F5F4F1] focus:outline-none focus:ring-2 focus:ring-[#E0592E] focus:bg-white`}
-                          placeholder="Saisissez votre adresse"
-                        />
-                      </StandaloneSearchBox>
-                    </div>
+              <div className="absolute left-0 right-0 z-[4] flex flex-col items-center px-8" style={{ top: "104px" }}>
+                <div className={kickerClass}>
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                    <path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z" />
+                    <circle cx="12" cy="10" r="2.5" />
+                  </svg>
+                  Localisation
+                </div>
+                <h1 className="text-[30px] font-semibold mb-[18px] text-center" style={{ fontFamily: "'Poppins', sans-serif" }}>
+                  Où se situe votre toit ?
+                </h1>
+                <StandaloneSearchBox onLoad={onLoadSearchBox} onPlacesChanged={onPlacesChanged}>
+                  <input
+                    type="text"
+                    value={formData.address}
+                    onChange={handleChange}
+                    name="address"
+                    placeholder="12 rue de la République, Marseille"
+                    className="w-full max-w-[540px] px-6 py-[19px] rounded-2xl border-[1.5px] border-white/30 bg-[rgba(9,14,50,0.6)] backdrop-blur-md text-white text-[16.5px] outline-none placeholder:text-white/50 focus:border-[#00b67a] focus:shadow-[0_0_0_4px_rgba(0,211,138,0.2)]"
+                  />
+                </StandaloneSearchBox>
+                <div className="flex gap-2 mt-[14px]">
+                  <button
+                    type="button"
+                    onClick={() => setMapType("satellite")}
+                    className={`border-[1.5px] rounded-[9px] px-[15px] py-2 text-[12.5px] font-semibold backdrop-blur-sm ${
+                      mapType === "satellite" ? "bg-[#00b67a] border-[#00b67a] text-[#04241a]" : "bg-[rgba(9,14,50,0.55)] border-white/25 text-[#dfe4ff]"
+                    }`}
+                  >
+                    Satellite
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMapType("roadmap")}
+                    className={`border-[1.5px] rounded-[9px] px-[15px] py-2 text-[12.5px] font-semibold backdrop-blur-sm ${
+                      mapType === "roadmap" ? "bg-[#00b67a] border-[#00b67a] text-[#04241a]" : "bg-[rgba(9,14,50,0.55)] border-white/25 text-[#dfe4ff]"
+                    }`}
+                  >
+                    Plan
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleGeolocation}
+                    disabled={isLocating}
+                    title="Me géolocaliser"
+                    className={`border-[1.5px] rounded-[9px] px-3 py-2 backdrop-blur-sm bg-[rgba(9,14,50,0.55)] border-white/25 text-white ${isLocating ? "opacity-60" : ""}`}
+                  >
+                    <Locate className={`w-4 h-4 ${isLocating ? "animate-spin" : ""}`} />
+                  </button>
+                </div>
+              </div>
 
+              <div className="absolute bottom-9 left-0 right-0 z-[4] flex flex-col items-center px-8 gap-3">
+                {formData.coordinates && (
+                  <div className="text-[13px] text-[#dfe4ff] bg-[rgba(9,14,50,0.55)] backdrop-blur-sm px-4 py-[9px] rounded-full text-center max-w-[540px]">
+                    {pvgisLoading
+                      ? "Calcul du gisement solaire en cours…"
+                      : specific
+                        ? `Ensoleillement estimé : ${specific.toLocaleString("fr-FR")} kWh/kWc/an · ${grade.label} (${grade.grade})`
+                        : "Repère placé — confirmez votre maison"}
+                  </div>
+                )}
+
+                {formData.coordinates && !houseConfirmed && (
+                  <div className="flex gap-3 w-full max-w-[460px]">
                     <button
                       type="button"
-                      onClick={handleGeolocation}
-                      disabled={isLocating}
-                      className={`px-4 py-2 bg-black text-white rounded-lg hover:bg-[#1A1A1A] transition-colors ${
-                        isLocating ? "opacity-70 cursor-not-allowed" : ""
-                      }`}
-                      title="Me géolocaliser"
+                      onClick={() => setHouseConfirmed(true)}
+                      className="flex-1 rounded-[14px] py-[15px] text-sm font-semibold border-[1.5px] border-[#00b67a] bg-[#00b67a] text-[#04241a]"
                     >
-                      <Locate className={`w-5 h-5 ${isLocating ? "animate-spin" : ""}`} />
+                      C'est bien ma maison
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setHouseConfirmed(false)}
+                      className="flex-1 rounded-[14px] py-[15px] text-sm font-semibold border-[1.5px] border-white/25 bg-[rgba(9,14,50,0.6)] backdrop-blur-sm text-white"
+                    >
+                      Ce n'est pas la bonne
                     </button>
                   </div>
+                )}
 
-                  {errors.address && (
-                    <div className="flex items-center mt-1 text-red-500 text-sm">
-                      <AlertCircle className="w-4 h-4 mr-1" />
-                      {errors.address}
-                    </div>
-                  )}
-                </div>
-
-                <div className="rounded-lg overflow-hidden border border-[#E5E3DD]">
-                  <GoogleMap
-                    mapContainerStyle={containerStyle}
-                    center={mapCenter}
-                    zoom={18}
-                    mapTypeId="satellite"
-                    onClick={(e) => {
-                      if (!e.latLng) return;
-                      const lat = e.latLng.lat();
-                      const lng = e.latLng.lng();
-
-                      setPvgisData(null);
-                      setPvgisError(null);
-
-                      setFormData((prev) => ({ ...prev, coordinates: { lat, lng } }));
-
-                      fetch(
-                        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=AIzaSyCDNh9_8-PUo1AJ6DgzPV0I_-3lsir8Pd0`
-                      )
-                        .then((r) => r.json())
-                        .then((data) => {
-                          if (data.results && data.results[0]) {
-                            setFormData((prev) => ({
-                              ...prev,
-                              address: data.results[0].formatted_address,
-                              coordinates: { lat, lng },
-                            }));
-                          }
-                        });
-                    }}
-                  >
-                    {formData.coordinates && <Marker position={formData.coordinates} />}
-                  </GoogleMap>
-                </div>
-
-                <div className="rounded-xl border border-[#E5E3DD] bg-[#F5F4F1] p-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <div className="text-sm text-[#6B6F7B]">Ensoleillement estimé</div>
-                      <div className="text-xl text-[#1A1D29] mt-1">
-                        {pvgisLoading
-                          ? "Calcul en cours…"
-                          : specific
-                            ? `${specific.toLocaleString("fr-FR")} kWh/kWc/an`
-                            : "—"}
-                      </div>
-                      <div className="text-xs text-[#6B6F7B] mt-1">
-                        Calcul PVGIS automatique, validé à l’étude.
-                      </div>
-                      {pvgisError && <div className="text-xs text-red-600 mt-2">PVGIS indisponible.</div>}
-                    </div>
-
-                    <div
-                      className={`shrink-0 inline-flex items-center rounded-full border px-3 py-1 text-sm ${badgeClasses(
-                        g.grade
-                      )}`}
-                    >
-                      {g.label} ({g.grade})
-                    </div>
+                {houseConfirmed && (
+                  <div className="flex items-center gap-2 text-[13.5px] font-bold text-[#04241a] bg-[#00d38a] px-[18px] py-[11px] rounded-full">
+                    <Check className="w-4 h-4" />
+                    Maison confirmée
                   </div>
-                </div>
+                )}
+
+                <button type="button" onClick={handleNext} disabled={!houseConfirmed} className={nextBtnClass}>
+                  Continuer
+                  <ChevronRight className="w-[17px] h-[17px]" />
+                </button>
               </div>
             </motion.div>
           )}
 
           {currentStep === 2 && (
-            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
-              <h3 className="text-[26px] md:text-3xl font-extrabold text-[#1A1D29] mb-6 text-center">Quel est votre type d'habitation ?</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFormData((p) => ({ ...p, buildingType: "house" }));
-                    setCurrentStep((s) => s + 1);
-                  }}
-                  className={`p-6 rounded-xl border-2 transition-all ${
-                    formData.buildingType === "house" ? "border-[#E0592E] bg-[#FDEDE6]" : "border-[#E5E3DD] hover:border-[#E0592E]/50"
-                  }`}
-                >
-                  <Home className="w-12 h-12 mb-4 mx-auto text-[#1A1D29]" />
-                  <p className="text-lg font-medium text-[#1A1D29]">Maison</p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFormData((p) => ({ ...p, buildingType: "apartment" }));
-                    setCurrentStep((s) => s + 1);
-                  }}
-                  className={`p-6 rounded-xl border-2 transition-all ${
-                    formData.buildingType === "apartment" ? "border-[#E0592E] bg-[#FDEDE6]" : "border-[#E5E3DD] hover:border-[#E0592E]/50"
-                  }`}
-                >
-                  <Building2 className="w-12 h-12 mb-4 mx-auto text-[#1A1D29]" />
-                  <p className="text-lg font-medium text-[#1A1D29]">Appartement</p>
-                </button>
-              </div>
-              {errors.buildingType && (
-                <div className="flex items-center mt-1 text-red-500 text-sm">
-                  <AlertCircle className="w-4 h-4 mr-1" />
-                  {errors.buildingType}
+            <motion.div
+              key="step2"
+              className="absolute inset-0 flex flex-col items-center justify-center px-8"
+              style={{ paddingTop: "110px", paddingBottom: "40px" }}
+              initial={{ opacity: 0, y: 22 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -14 }}
+              transition={{ duration: 0.4 }}
+            >
+              <div className="w-full max-w-[600px] text-center">
+                <div className={kickerClass}>
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                    <path d="M3 10.5 12 3l9 7.5" />
+                    <path d="M5 9.5V21h14V9.5" />
+                  </svg>
+                  Logement
                 </div>
-              )}
-            </motion.div>
-          )}
-
-          {currentStep === 3 && (
-            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
-              <h3 className="text-[26px] md:text-3xl font-extrabold text-[#1A1D29] mb-6 text-center">Quelle est la surface de votre logement ?</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {[
-                  { value: "50", label: "Moins de 50m²" },
-                  { value: "50-100", label: "Entre 50m² et 100m²" },
-                  { value: "100-150", label: "Entre 100m² et 150m²" },
-                  { value: "150+", label: "Plus de 150m²" },
-                ].map((o) => (
-                  <button
-                    key={o.value}
-                    type="button"
-                    onClick={() => {
-                      setFormData((p) => ({ ...p, surface: o.value as any }));
-                      setCurrentStep((s) => s + 1);
-                    }}
-                    className={`p-6 rounded-xl border-2 transition-all ${
-                      formData.surface === o.value ? "border-[#E0592E] bg-[#FDEDE6]" : "border-[#E5E3DD] hover:border-[#E0592E]/50"
-                    }`}
-                  >
-                    <Ruler className="w-8 h-8 mb-4 mx-auto text-[#1A1D29]" />
-                    <p className="text-lg font-medium text-[#1A1D29]">{o.label}</p>
-                  </button>
-                ))}
-              </div>
-              {errors.surface && (
-                <div className="flex items-center mt-1 text-red-500 text-sm">
-                  <AlertCircle className="w-4 h-4 mr-1" />
-                  {errors.surface}
+                <h1 className="text-[38px] font-semibold leading-tight mb-3.5" style={{ fontFamily: "'Poppins', sans-serif" }}>
+                  C'est quoi votre logement ?
+                </h1>
+                <p className="text-[#c3caf0] text-[15.5px] mb-[34px]">Ça change la façon dont on positionne les panneaux.</p>
+                <div className="grid grid-cols-2 gap-3.5">
+                  {BUILDING_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => selectAndAdvance({ buildingType: opt.value })}
+                      className={`${optBase} ${formData.buildingType === opt.value ? optOn : optOff}`}
+                    >
+                      <div className="w-[34px] h-[34px] rounded-[10px] bg-white/10 flex items-center justify-center">
+                        {opt.value === "house" ? <Home className="w-[17px] h-[17px]" /> : <Building2 className="w-[17px] h-[17px]" />}
+                      </div>
+                      <div className="text-[15.5px] font-semibold">{opt.label}</div>
+                    </button>
+                  ))}
                 </div>
-              )}
-            </motion.div>
-          )}
-
-          {currentStep === 4 && (
-            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
-              <h3 className="text-[26px] md:text-3xl font-extrabold text-[#1A1D29] mb-6 text-center">Combien d'habitants permanents ?</h3>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                {Array.from({ length: 10 }, (_, i) => i + 1).map((num) => (
-                  <button
-                    key={num}
-                    type="button"
-                    onClick={() => {
-                      setFormData((p) => ({ ...p, residents: String(num) }));
-                      setCurrentStep((s) => s + 1);
-                    }}
-                    className={`p-6 rounded-xl border-2 transition-all ${
-                      formData.residents === String(num) ? "border-[#E0592E] bg-[#FDEDE6]" : "border-[#E5E3DD] hover:border-[#E0592E]/50"
-                    }`}
-                  >
-                    <Users className="w-6 h-6 mb-2 mx-auto text-[#1A1D29]" />
-                    <p className="text-lg font-medium text-[#1A1D29]">{num}</p>
-                  </button>
-                ))}
-              </div>
-              {errors.residents && (
-                <div className="flex items-center mt-1 text-red-500 text-sm">
-                  <AlertCircle className="w-4 h-4 mr-1" />
-                  {errors.residents}
-                </div>
-              )}
-            </motion.div>
-          )}
-
-          {currentStep === 5 && (
-            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
-              <h3 className="text-[26px] md:text-3xl font-extrabold text-[#1A1D29] mb-6 text-center">Quel est votre mode de chauffage ?</h3>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {[
-                  { value: "electric", label: "Électricité" },
-                  { value: "gas", label: "Gaz" },
-                  { value: "fuel", label: "Fioul" },
-                  { value: "wood", label: "Bois" },
-                  { value: "other", label: "Autre" },
-                ].map((o) => (
-                  <button
-                    key={o.value}
-                    type="button"
-                    onClick={() => {
-                      setFormData((p) => ({ ...p, heatingType: o.value as any }));
-                      setCurrentStep((s) => s + 1);
-                    }}
-                    className={`p-4 rounded-xl border-2 transition-all ${
-                      formData.heatingType === o.value ? "border-[#E0592E] bg-[#FDEDE6]" : "border-[#E5E3DD] hover:border-[#E0592E]/50"
-                    }`}
-                  >
-                    <p className="text-lg font-medium text-[#1A1D29]">{o.label}</p>
-                  </button>
-                ))}
-              </div>
-              {errors.heatingType && (
-                <div className="flex items-center mt-1 text-red-500 text-sm">
-                  <AlertCircle className="w-4 h-4 mr-1" />
-                  {errors.heatingType}
-                </div>
-              )}
-            </motion.div>
-          )}
-
-          {currentStep === 6 && (
-            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
-              <h3 className="text-[26px] md:text-3xl font-extrabold text-[#1A1D29] mb-6 text-center">Votre consommation énergétique</h3>
-              <div className="space-y-4">
-                <div className="flex items-center gap-4">
-                  <div className="flex-1">
-                    <input
-                      type="number"
-                      value={formData.billValue}
-                      onChange={(e) => setFormData((p) => ({ ...p, billValue: e.target.value }))}
-                      className={`w-full px-4 py-3 rounded-lg border ${
-                        (errors as any).billValue ? "border-red-500" : "border-[#E5E3DD]"
-                      } focus:outline-none focus:ring-2 focus:ring-[#E0592E]`}
-                      placeholder="Entrez votre consommation"
-                    />
-                  </div>
-
-                  <select
-                    value={formData.billUnit}
-                    onChange={(e) => setFormData((p) => ({ ...p, billUnit: e.target.value as any }))}
-                    className="px-4 py-3 rounded-lg border border-[#E5E3DD] focus:outline-none focus:ring-2 focus:ring-[#E0592E] bg-white"
-                  >
-                    <option value="euros">€</option>
-                    <option value="kwh">kWh</option>
-                  </select>
-
-                  <select
-                    value={formData.billType}
-                    onChange={(e) => setFormData((p) => ({ ...p, billType: e.target.value as any }))}
-                    className="px-4 py-3 rounded-lg border border-[#E5E3DD] focus:outline-none focus:ring-2 focus:ring-[#E0592E] bg-white"
-                  >
-                    <option value="monthly">/ mois</option>
-                    <option value="annual">/ an</option>
-                  </select>
-                </div>
-
-                {(errors as any).billValue && (
-                  <div className="flex items-center mt-1 text-red-500 text-sm">
+                {errors.buildingType && (
+                  <div className="flex items-center justify-center mt-4 text-red-300 text-sm">
                     <AlertCircle className="w-4 h-4 mr-1" />
-                    {(errors as any).billValue}
+                    {errors.buildingType}
                   </div>
                 )}
               </div>
             </motion.div>
           )}
 
-          {currentStep === 7 && (
-            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
-              <h3 className="text-[26px] md:text-3xl font-extrabold text-[#1A1D29] mb-6 text-center">Quel est votre type de toiture ?</h3>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {[
-                  { value: "flat", label: "Toiture plate" },
-                  { value: "mono", label: "Mono-pente" },
-                  { value: "dual", label: "2 pans" },
-                  { value: "quad", label: "4 pans" },
-                  { value: "other", label: "Autre" },
-                ].map((o) => (
-                  <button
-                    key={o.value}
-                    type="button"
-                    onClick={() => {
-                      setFormData((p) => ({ ...p, roofType: o.value as any }));
-                      setCurrentStep((s) => s + 1);
-                    }}
-                    className={`p-4 rounded-xl border-2 transition-all ${
-                      formData.roofType === o.value ? "border-[#E0592E] bg-[#FDEDE6]" : "border-[#E5E3DD] hover:border-[#E0592E]/50"
-                    }`}
-                  >
-                    <p className="text-lg font-medium text-[#1A1D29]">{o.label}</p>
-                  </button>
-                ))}
-              </div>
-              {errors.roofType && (
-                <div className="flex items-center mt-1 text-red-500 text-sm">
-                  <AlertCircle className="w-4 h-4 mr-1" />
-                  {errors.roofType}
+          {currentStep === 3 && (
+            <motion.div
+              key="step3"
+              className="absolute inset-0 flex flex-col items-center justify-center px-8"
+              style={{ paddingTop: "110px", paddingBottom: "40px" }}
+              initial={{ opacity: 0, y: 22 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -14 }}
+              transition={{ duration: 0.4 }}
+            >
+              <div className="w-full max-w-[600px] text-center">
+                <div className={kickerClass}>
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                    <path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z" />
+                  </svg>
+                  Surface
                 </div>
-              )}
+                <h1 className="text-[38px] font-semibold leading-tight mb-3.5" style={{ fontFamily: "'Poppins', sans-serif" }}>
+                  Quelle surface habitable ?
+                </h1>
+                <p className="text-[#c3caf0] text-[15.5px] mb-[34px]">Une estimation suffit.</p>
+                <div className="grid grid-cols-2 gap-3.5">
+                  {SURFACE_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => selectAndAdvance({ surface: opt.value })}
+                      className={`${optBase} ${formData.surface === opt.value ? optOn : optOff}`}
+                    >
+                      <div className="text-[15.5px] font-semibold">{opt.label}</div>
+                    </button>
+                  ))}
+                </div>
+                {errors.surface && (
+                  <div className="flex items-center justify-center mt-4 text-red-300 text-sm">
+                    <AlertCircle className="w-4 h-4 mr-1" />
+                    {errors.surface}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+
+          {currentStep === 4 && (
+            <motion.div
+              key="step4"
+              className="absolute inset-0 flex flex-col items-center justify-center px-8"
+              style={{ paddingTop: "110px", paddingBottom: "40px" }}
+              initial={{ opacity: 0, y: 22 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -14 }}
+              transition={{ duration: 0.4 }}
+            >
+              <div className="w-full max-w-[600px] text-center">
+                <div className={kickerClass}>
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                    <circle cx="9" cy="7" r="3.2" />
+                    <path d="M2.5 21c0-3.6 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" />
+                    <circle cx="17.5" cy="8.5" r="2.6" />
+                    <path d="M15.7 14.8c2.7.4 4.8 2.7 4.8 5.5" />
+                  </svg>
+                  Foyer
+                </div>
+                <h1 className="text-[38px] font-semibold leading-tight mb-[30px]" style={{ fontFamily: "'Poppins', sans-serif" }}>
+                  Combien d'habitants au quotidien ?
+                </h1>
+                <div className="mt-1.5">
+                  <div
+                    className="font-bold mb-2.5 text-[42px] bg-gradient-to-br from-white to-[#bfffe4] bg-clip-text text-transparent"
+                    style={{ fontFamily: "'Poppins', sans-serif" }}
+                  >
+                    {formData.residents} personne{Number(formData.residents) > 1 ? "s" : ""}
+                  </div>
+                  <input
+                    type="range"
+                    min={1}
+                    max={10}
+                    value={formData.residents}
+                    onChange={(e) => setFormData((p) => ({ ...p, residents: e.target.value }))}
+                    className="w-full accent-[#00b67a] h-1.5"
+                  />
+                </div>
+                <div className="mt-[34px] flex flex-col items-center gap-3.5">
+                  <button type="button" onClick={handleNext} className={nextBtnClass}>
+                    Continuer
+                    <ChevronRight className="w-[17px] h-[17px]" />
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {currentStep === 5 && (
+            <motion.div
+              key="step5"
+              className="absolute inset-0 flex flex-col items-center justify-center px-8"
+              style={{ paddingTop: "110px", paddingBottom: "40px" }}
+              initial={{ opacity: 0, y: 22 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -14 }}
+              transition={{ duration: 0.4 }}
+            >
+              <div className="w-full max-w-[600px] text-center">
+                <div className={kickerClass}>
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                    <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z" />
+                  </svg>
+                  Chauffage
+                </div>
+                <h1 className="text-[38px] font-semibold leading-tight mb-[30px]" style={{ fontFamily: "'Poppins', sans-serif" }}>
+                  Vous chauffez comment ?
+                </h1>
+                <div className="grid grid-cols-2 gap-3.5">
+                  {HEATING_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => selectAndAdvance({ heatingType: opt.value })}
+                      className={`${optBase} ${formData.heatingType === opt.value ? optOn : optOff}`}
+                    >
+                      <div className="text-[15.5px] font-semibold">{opt.label}</div>
+                    </button>
+                  ))}
+                </div>
+                {errors.heatingType && (
+                  <div className="flex items-center justify-center mt-4 text-red-300 text-sm">
+                    <AlertCircle className="w-4 h-4 mr-1" />
+                    {errors.heatingType}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+
+          {currentStep === 6 && (
+            <motion.div
+              key="step6"
+              className="absolute inset-0 flex flex-col items-center justify-center px-8"
+              style={{ paddingTop: "110px", paddingBottom: "40px" }}
+              initial={{ opacity: 0, y: 22 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -14 }}
+              transition={{ duration: 0.4 }}
+            >
+              <div className="w-full max-w-[600px] text-center">
+                <div className={kickerClass}>
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                    <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+                  </svg>
+                  Facture
+                </div>
+                <h1 className="text-[38px] font-semibold leading-tight mb-3.5" style={{ fontFamily: "'Poppins', sans-serif" }}>
+                  Votre consommation d'électricité ?
+                </h1>
+                <p className="text-[#c3caf0] text-[15.5px] mb-[34px]">
+                  En euros ou en kWh, comme vous préférez — indiqué sur votre facture.
+                </p>
+
+                <div className="flex bg-white/[0.08] border border-white/10 rounded-[13px] p-1 mb-4">
+                  {(["euros", "kwh"] as const).map((u) => (
+                    <button
+                      key={u}
+                      type="button"
+                      onClick={() => setFormData((p) => ({ ...p, billUnit: u }))}
+                      className={`flex-1 rounded-[9px] py-[11px] text-[13.5px] font-semibold ${
+                        formData.billUnit === u ? "bg-white/95 text-[#172162]" : "text-[#c3caf0]"
+                      }`}
+                    >
+                      {u === "euros" ? "En euros €" : "En kWh"}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex bg-white/[0.08] border border-white/10 rounded-[13px] p-1 mb-4">
+                  {(["monthly", "annual"] as const).map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setFormData((prev) => ({ ...prev, billType: p }))}
+                      className={`flex-1 rounded-[9px] py-[11px] text-[13.5px] font-semibold ${
+                        formData.billType === p ? "bg-white/95 text-[#172162]" : "text-[#c3caf0]"
+                      }`}
+                    >
+                      {p === "monthly" ? "Facture mensuelle" : "Facture annuelle"}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="text-left">
+                  <label className="block text-center text-[13px] font-semibold text-[#c3caf0] mb-2.5">
+                    {`Montant ${formData.billType === "monthly" ? "mensuel" : "annuel"} (${formData.billUnit === "euros" ? "€" : "kWh"})`}
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={formData.billValue}
+                    onChange={(e) => setFormData((p) => ({ ...p, billValue: e.target.value.replace(/[^0-9.]/g, "") }))}
+                    placeholder={formData.billUnit === "euros" ? (formData.billType === "monthly" ? "120" : "1440") : formData.billType === "monthly" ? "420" : "5000"}
+                    className="w-full text-center px-5 py-5 rounded-2xl border-[1.5px] border-white/[0.18] bg-white/[0.07] text-white text-[26px] font-bold outline-none focus:border-[#00b67a] focus:shadow-[0_0_0_4px_rgba(0,211,138,0.16)]"
+                    style={{ fontFamily: "'Poppins', sans-serif" }}
+                  />
+                </div>
+
+                <div className="flex gap-2 mt-3.5 flex-wrap justify-center">
+                  {billChips.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setFormData((p) => ({ ...p, billValue: String(c) }))}
+                      className="border-[1.5px] border-white/[0.18] bg-white/[0.06] rounded-full px-4 py-2 text-[13px] font-semibold text-[#dfe4ff] hover:border-[#00b67a] hover:bg-[#00d38a]/[0.14]"
+                    >
+                      {c.toLocaleString("fr-FR")} {formData.billUnit === "euros" ? "€" : "kWh"}
+                    </button>
+                  ))}
+                </div>
+
+                {errors.billValue && (
+                  <div className="flex items-center justify-center mt-4 text-red-300 text-sm">
+                    <AlertCircle className="w-4 h-4 mr-1" />
+                    {errors.billValue}
+                  </div>
+                )}
+
+                <div className="mt-[34px] flex flex-col items-center gap-3.5">
+                  <button
+                    type="button"
+                    onClick={handleNext}
+                    disabled={!formData.billValue || parseFloat(formData.billValue) <= 0}
+                    className={nextBtnClass}
+                  >
+                    Continuer
+                    <ChevronRight className="w-[17px] h-[17px]" />
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {currentStep === 7 && (
+            <motion.div
+              key="step7"
+              className="absolute inset-0 flex flex-col items-center justify-center px-8"
+              style={{ paddingTop: "110px", paddingBottom: "40px" }}
+              initial={{ opacity: 0, y: 22 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -14 }}
+              transition={{ duration: 0.4 }}
+            >
+              <div className="w-full max-w-[600px] text-center">
+                <div className={kickerClass}>
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                    <path d="M3 10.5 12 3l9 7.5M6 10v3M18 10v3" />
+                  </svg>
+                  Toiture
+                </div>
+                <h1 className="text-[38px] font-semibold leading-tight mb-[30px]" style={{ fontFamily: "'Poppins', sans-serif" }}>
+                  Et votre toiture, elle ressemble à quoi ?
+                </h1>
+                <div className="grid grid-cols-2 gap-3.5">
+                  {ROOF_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => selectAndAdvance({ roofType: opt.value })}
+                      className={`${optBase} ${formData.roofType === opt.value ? optOn : optOff}`}
+                    >
+                      <div className="text-[15.5px] font-semibold">{opt.label}</div>
+                    </button>
+                  ))}
+                </div>
+                {errors.roofType && (
+                  <div className="flex items-center justify-center mt-4 text-red-300 text-sm">
+                    <AlertCircle className="w-4 h-4 mr-1" />
+                    {errors.roofType}
+                  </div>
+                )}
+              </div>
             </motion.div>
           )}
 
           {currentStep === 8 && (
-            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
-              <h3 className="text-[26px] md:text-3xl font-extrabold text-[#1A1D29] mb-6 text-center">Vos informations de contact</h3>
+            <motion.div
+              key="step8"
+              className="absolute inset-0 flex flex-col items-center justify-center px-8"
+              style={{ paddingTop: "110px", paddingBottom: "40px" }}
+              initial={{ opacity: 0, y: 22 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -14 }}
+              transition={{ duration: 0.4 }}
+            >
+              <div className="w-full max-w-[600px] text-center">
+                <div className={kickerClass}>
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                    <path d="M4 4h16v16H4z" />
+                    <path d="M4 9h16M9 4v16" />
+                  </svg>
+                  Dernière étape
+                </div>
+                <h1 className="text-[38px] font-semibold leading-tight mb-3.5" style={{ fontFamily: "'Poppins', sans-serif" }}>
+                  Où vous envoyer votre étude ?
+                </h1>
+                <p className="text-[#c3caf0] text-[15.5px] mb-[34px]">Un conseiller vous rappelle sous 24h ouvrées.</p>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-[#6B6F7B] mb-1">Prénom</label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                    <input
-                      type="text"
-                      name="firstName"
-                      value={formData.firstName}
-                      onChange={handleChange}
-                      className={`w-full pl-10 pr-4 py-2 rounded-lg border ${
-                        errors.firstName ? "border-red-500" : "border-[#E5E3DD]"
-                      } focus:outline-none focus:ring-2 focus:ring-[#E0592E]`}
-                      placeholder="Votre prénom"
-                    />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 text-left">
+                  <div>
+                    <label className="block text-[13px] font-semibold text-[#c3caf0] mb-2.5">Prénom *</label>
+                    <div className="relative">
+                      <User className="absolute left-4 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-white/40" />
+                      <input
+                        type="text"
+                        name="firstName"
+                        value={formData.firstName}
+                        onChange={handleChange}
+                        placeholder="Camille"
+                        className="w-full pl-11 pr-4 py-[15px] rounded-2xl border-[1.5px] border-white/[0.18] bg-white/[0.07] text-white text-[15px] outline-none focus:border-[#00b67a] focus:shadow-[0_0_0_4px_rgba(0,211,138,0.16)] placeholder:text-white/40"
+                      />
+                    </div>
                   </div>
-                  {errors.firstName && <p className="mt-1 text-sm text-red-500">{errors.firstName}</p>}
+                  <div>
+                    <label className="block text-[13px] font-semibold text-[#c3caf0] mb-2.5">Nom *</label>
+                    <div className="relative">
+                      <User className="absolute left-4 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-white/40" />
+                      <input
+                        type="text"
+                        name="lastName"
+                        value={formData.lastName}
+                        onChange={handleChange}
+                        placeholder="Martin"
+                        className="w-full pl-11 pr-4 py-[15px] rounded-2xl border-[1.5px] border-white/[0.18] bg-white/[0.07] text-white text-[15px] outline-none focus:border-[#00b67a] focus:shadow-[0_0_0_4px_rgba(0,211,138,0.16)] placeholder:text-white/40"
+                      />
+                    </div>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-[#6B6F7B] mb-1">Nom</label>
+                <div className="mt-3.5 text-left">
+                  <label className="block text-[13px] font-semibold text-[#c3caf0] mb-2.5">Email *</label>
                   <div className="relative">
-                    <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                    <input
-                      type="text"
-                      name="lastName"
-                      value={formData.lastName}
-                      onChange={handleChange}
-                      className={`w-full pl-10 pr-4 py-2 rounded-lg border ${
-                        errors.lastName ? "border-red-500" : "border-[#E5E3DD]"
-                      } focus:outline-none focus:ring-2 focus:ring-[#E0592E]`}
-                      placeholder="Votre nom"
-                    />
-                  </div>
-                  {errors.lastName && <p className="mt-1 text-sm text-red-500">{errors.lastName}</p>}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-[#6B6F7B] mb-1">Email</label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-white/40" />
                     <input
                       type="email"
                       name="email"
                       value={formData.email}
                       onChange={handleChange}
-                      className={`w-full pl-10 pr-4 py-2 rounded-lg border ${
-                        errors.email ? "border-red-500" : "border-[#E5E3DD]"
-                      } focus:outline-none focus:ring-2 focus:ring-[#E0592E]`}
-                      placeholder="votre@email.com"
+                      placeholder="camille@email.com"
+                      className="w-full pl-11 pr-4 py-[15px] rounded-2xl border-[1.5px] border-white/[0.18] bg-white/[0.07] text-white text-[15px] outline-none focus:border-[#00b67a] focus:shadow-[0_0_0_4px_rgba(0,211,138,0.16)] placeholder:text-white/40"
                     />
                   </div>
-                  {errors.email && <p className="mt-1 text-sm text-red-500">{errors.email}</p>}
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-[#6B6F7B] mb-1">Téléphone</label>
+                <div className="mt-3.5 text-left">
+                  <label className="block text-[13px] font-semibold text-[#c3caf0] mb-2.5">Téléphone *</label>
                   <div className="relative">
-                    <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                    <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-white/40" />
                     <input
                       type="tel"
                       name="phone"
                       value={formData.phone}
                       onChange={handleChange}
-                      className={`w-full pl-10 pr-4 py-2 rounded-lg border ${
-                        errors.phone ? "border-red-500" : "border-[#E5E3DD]"
-                      } focus:outline-none focus:ring-2 focus:ring-[#E0592E]`}
-                      placeholder="Votre numéro"
+                      placeholder="06 12 34 56 78"
+                      className="w-full pl-11 pr-4 py-[15px] rounded-2xl border-[1.5px] border-white/[0.18] bg-white/[0.07] text-white text-[15px] outline-none focus:border-[#00b67a] focus:shadow-[0_0_0_4px_rgba(0,211,138,0.16)] placeholder:text-white/40"
                     />
                   </div>
-                  {errors.phone && <p className="mt-1 text-sm text-red-500">{errors.phone}</p>}
                 </div>
 
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-[#6B6F7B] mb-1">Message (optionnel)</label>
-                  <textarea
-                    name="message"
-                    value={formData.message}
-                    onChange={handleChange}
-                    className="w-full px-4 py-2 rounded-lg border border-[#E5E3DD] focus:outline-none focus:ring-2 focus:ring-[#E0592E]"
-                    rows={4}
-                    placeholder="Vos questions ou commentaires..."
-                  />
+                <p className="text-[12.5px] text-[#a9b3e0] mt-3.5 text-center">
+                  Ces informations nous permettent de vous envoyer votre préconisation personnalisée.
+                </p>
+
+                <div className="mt-[34px] flex flex-col items-center gap-3.5">
+                  <button type="button" onClick={handleNext} disabled={isSubmitting || !contactValid} className={nextBtnClass}>
+                    {isSubmitting ? (
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-[#04241a]" />
+                    ) : (
+                      <>
+                        Voir ma préconisation
+                        <ChevronRight className="w-[17px] h-[17px]" />
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
-        </div>
-
-        <div className="flex justify-between mt-8">
-          {currentStep > 1 && (
-            <button type="button" onClick={handlePrevious} className="flex items-center px-6 py-2 text-[#6B6F7B] hover:text-[#1A1D29] transition-colors">
-              <ChevronLeft className="w-5 h-5 mr-2" />
-              Précédent
-            </button>
-          )}
-
-          <div className="ml-auto">
-            <button
-              type="button"
-              onClick={handleNext}
-              disabled={isSubmitting}
-              className={`flex items-center px-7 py-3 rounded-lg text-white font-medium transition-colors ${
-                isSubmitting ? "bg-black/60 cursor-not-allowed" : "bg-black hover:bg-[#1A1A1A]"
-              }`}
-            >
-              {currentStep === 8 ? (
-                isSubmitting ? (
-                  <>
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2" />
-                    Envoi en cours...
-                  </>
-                ) : (
-                  <>
-                    <Send className="w-5 h-5 mr-2" />
-                    Voir ma préconisation
-                  </>
-                )
-              ) : (
-                <>
-                  Suivant
-                  <ChevronRight className="w-5 h-5 ml-2" />
-                </>
-              )}
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   );
