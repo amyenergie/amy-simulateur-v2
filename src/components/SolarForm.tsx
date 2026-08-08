@@ -672,8 +672,8 @@ export default function SolarForm() {
                     value={formData.address}
                     onChange={handleChange}
                     name="address"
-                    placeholder="12 rue de la République, Marseille"
-                    className="w-full max-w-[540px] px-6 py-[19px] rounded-2xl border-[1.5px] border-white/30 bg-[rgba(9,14,50,0.6)] backdrop-blur-md text-white text-[16.5px] outline-none placeholder:text-white/50 focus:border-[#00b67a] focus:shadow-[0_0_0_4px_rgba(0,211,138,0.2)]"
+                    placeholder="12 rue de la République"
+                    className="w-full max-w-[540px] px-4 sm:px-6 py-[19px] rounded-2xl border-[1.5px] border-white/30 bg-[rgba(9,14,50,0.6)] backdrop-blur-md text-white text-[14.5px] sm:text-[16.5px] outline-none placeholder:text-white/50 focus:border-[#00b67a] focus:shadow-[0_0_0_4px_rgba(0,211,138,0.2)]"
                   />
                 </StandaloneSearchBox>
                 <div className="flex gap-2 mt-[14px]">
