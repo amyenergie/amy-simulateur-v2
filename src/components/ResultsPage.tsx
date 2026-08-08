@@ -153,13 +153,6 @@ export default function ResultsPage() {
     return Math.round(annualProdForReco * 1.0);
   }, [annualProdForReco]);
 
-  // Cout d'installation retenu pour l'amortissement (moyenne de la fourchette,
-  // pour rester representatif plutot que de prendre uniquement le minimum).
-  const estimatedInstallCost = useMemo(() => {
-    if (!priceRange) return null;
-    return Math.round((priceRange.min + priceRange.max) / 2);
-  }, [priceRange]);
-
   // Economies annuelles estimees a partir de la production reellement valorisee
   // (kWh produits x prix du kWh), plafonnees par la facture actuelle car on ne
   // peut pas economiser plus que ce que l'on depense aujourd'hui.
@@ -172,10 +165,12 @@ export default function ResultsPage() {
     return solarSavings;
   }, [prodValoriseeVirtuelle, annualProdForReco, annualBillEuro]);
 
+  // Amortissement "rapide" : cout minimum de la fourchette / economies annuelles,
+  // pour donner le meilleur scenario tout en gardant la fourchette visible.
   const amortRapide = useMemo(() => {
-    if (!estimatedInstallCost || !annualSavingsEuro || annualSavingsEuro <= 0) return null;
-    return estimatedInstallCost / annualSavingsEuro;
-  }, [estimatedInstallCost, annualSavingsEuro]);
+    if (!priceRange?.min || !annualSavingsEuro || annualSavingsEuro <= 0) return null;
+    return priceRange.min / annualSavingsEuro;
+  }, [priceRange, annualSavingsEuro]);
 
   const techLine =
     techSummaryFromState ||
@@ -359,10 +354,10 @@ export default function ResultsPage() {
                 </div>
 
                 <div className="rounded-2xl bg-white border border-black/10 p-5 shadow-sm">
-                  <div className="text-gray-600 text-sm">Amortissement estimé</div>
+                  <div className="text-gray-600 text-sm">Amortissement rapide</div>
                   <div className="text-[#0b2b6f] text-3xl mt-1">{amortRapide ? `${amortRapide.toFixed(1)} ans` : "—"}</div>
                   <div className="text-gray-500 text-xs mt-2">
-                    Investissement ~{formatEuro(estimatedInstallCost)} · Économies ~{formatEuro(annualSavingsEuro)}/an
+                    Investissement {formatEuro(priceRange.min)} – {formatEuro(priceRange.max)} · Économies ~{formatEuro(annualSavingsEuro)}/an
                   </div>
                 </div>
               </div>
