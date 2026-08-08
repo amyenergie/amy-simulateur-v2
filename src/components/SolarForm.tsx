@@ -255,15 +255,26 @@ export default function SolarForm() {
   // l'initialisation (montage dans une transition/anime, StrictMode, etc.).
   // On force un resize + un recentrage a chaque fois qu'on a une carte prete
   // et des coordonnees a afficher, pour garantir que les tuiles se chargent.
+  // On force aussi explicitement le mapTypeId : la prop seule ne suffit pas
+  // toujours a l'initialisation (la carte demarre parfois en "roadmap" malgre
+  // mapTypeId="satellite").
   useEffect(() => {
     if (!mapInstance) return;
     const id = window.setTimeout(() => {
       window.google?.maps?.event?.trigger(mapInstance, "resize");
       mapInstance.setCenter(mapCenter);
       mapInstance.setZoom(19);
+      mapInstance.setMapTypeId(mapType);
     }, 150);
     return () => window.clearTimeout(id);
   }, [mapInstance, mapCenter]);
+
+  // Reagit explicitement aux clics sur les boutons Satellite / Plan, au cas ou
+  // le composant GoogleMap ne repercute pas toujours le changement de prop.
+  useEffect(() => {
+    if (!mapInstance) return;
+    mapInstance.setMapTypeId(mapType);
+  }, [mapInstance, mapType]);
 
   const handleGeolocation = () => {
     if (!navigator.geolocation) return;
@@ -620,9 +631,11 @@ export default function SolarForm() {
                   onClick={handleMapClick}
                   onLoad={(map) => {
                     setMapInstance(map);
+                    map.setMapTypeId(mapType);
                     window.setTimeout(() => {
                       window.google?.maps?.event?.trigger(map, "resize");
                       map.setCenter(mapCenter);
+                      map.setMapTypeId(mapType);
                     }, 150);
                   }}
                   onUnmount={() => setMapInstance(null)}
