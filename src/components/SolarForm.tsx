@@ -655,7 +655,7 @@ export default function SolarForm() {
                 style={{ background: "linear-gradient(0deg, rgba(9,14,50,.88), rgba(9,14,50,0))" }}
               />
 
-              <div className="absolute left-0 right-0 z-[4] flex flex-col items-center px-8" style={{ top: "104px" }}>
+              <div className="absolute left-0 right-0 z-[4] flex flex-col items-center px-4 sm:px-8" style={{ top: "104px" }}>
                 <div className={kickerClass}>
                   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
                     <path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z" />
@@ -707,7 +707,7 @@ export default function SolarForm() {
                 </div>
               </div>
 
-              <div className="absolute bottom-9 left-0 right-0 z-[4] flex flex-col items-center px-8 gap-3">
+              <div className="absolute bottom-9 left-0 right-0 z-[4] flex flex-col items-center px-4 sm:px-8 gap-3">
                 {formData.coordinates && (
                   <div className="text-[13px] text-[#dfe4ff] bg-[rgba(9,14,50,0.55)] backdrop-blur-sm px-4 py-[9px] rounded-full text-center max-w-[540px]">
                     {pvgisLoading
