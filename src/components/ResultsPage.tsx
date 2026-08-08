@@ -49,119 +49,8 @@ function safeText(v: any) {
   return String(v ?? "");
 }
 
-function CtaBanner({
-  onClick,
-  status,
-  compact,
-  note,
-}: {
-  onClick: () => void;
-  status: "idle" | "sending" | "sent" | "error";
-  compact?: boolean;
-  note?: string;
-}) {
-  return (
-    <div className="rounded-3xl overflow-hidden border border-black/10 shadow-xl bg-white">
-      <div className="relative">
-        <div className="absolute inset-0 bg-gradient-to-r from-[#ff7a00] via-[#ffc400] to-[#2b7cff] opacity-90" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_30%,rgba(255,255,255,0.30),transparent_35%),radial-gradient(circle_at_80%_20%,rgba(0,0,0,0.16),transparent_45%)]" />
-        <div className={`relative ${compact ? "p-5" : "p-6 md:p-7"}`}>
-          <div className={`text-white ${compact ? "text-xl" : "text-2xl md:text-3xl"}`}>
-            Étude technique complète offerte
-          </div>
-          <div className="text-white/95 text-sm mt-2 max-w-4xl">
-            Un technicien valide la surface exploitable, les contraintes, et la configuration finale. AMY Énergie s’occupe de tout.
-          </div>
-
-          <div className="mt-4 flex flex-col md:flex-row gap-3 md:items-center">
-            <button
-              onClick={onClick}
-              disabled={status === "sending" || status === "sent"}
-              className={`rounded-2xl px-5 py-3 text-white transition transform-gpu ${
-                status === "sent"
-                  ? "bg-black/25 cursor-not-allowed"
-                  : status === "sending"
-                    ? "bg-black/20 cursor-wait"
-                    : "bg-black/30 hover:bg-black/40 hover:-translate-y-[1px]"
-              }`}
-            >
-              {status === "sent"
-                ? "Demande envoyée, un technicien vous contacte"
-                : status === "sending"
-                  ? "Envoi en cours…"
-                  : "Demander mon étude complète"}
-            </button>
-
-            <div className="text-white/95 text-xs md:text-sm">
-              {note || "Votre demande est enregistrée pour prioriser votre rappel."}
-              {status === "error" ? " Envoi impossible, réessayez." : ""}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PodiumCard({
-  rank,
-  title,
-  subtitle,
-  autoconso,
-  kwhLabel,
-  kwhValue,
-  note,
-}: {
-  rank: 1 | 2 | 3;
-  title: string;
-  subtitle: string;
-  autoconso: string;
-  kwhLabel?: string;
-  kwhValue?: string;
-  note?: string;
-}) {
-  const shell =
-    rank === 1
-      ? "lg:-translate-y-2 border-2 border-emerald-200 shadow-[0_18px_60px_rgba(16,185,129,0.22)]"
-      : rank === 2
-        ? "border border-black/10 shadow-[0_14px_50px_rgba(2,6,23,0.10)]"
-        : "border border-black/10 shadow-[0_14px_50px_rgba(2,6,23,0.08)]";
-
-  return (
-    <div className={`rounded-3xl bg-white overflow-hidden ${shell} transform-gpu transition hover:-translate-y-1`}>
-      <div className="p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-xs text-gray-500">{subtitle}</div>
-            <div className="text-lg text-[#0b2b6f] mt-1 truncate">{title}</div>
-          </div>
-
-          <div
-            className={`shrink-0 rounded-full px-3 py-1 text-xs border ${
-              rank === 1 ? "bg-emerald-100 border-emerald-200 text-emerald-900" : "bg-gray-100 border-gray-200 text-gray-700"
-            }`}
-          >
-            {rank}
-          </div>
-        </div>
-
-        <div className="mt-4">
-          <div className="text-[#0b2b6f] font-semibold leading-tight text-[clamp(18px,2.2vw,28px)] break-words">
-            AUTOCONSO {autoconso}
-          </div>
-
-          {note ? <div className="text-xs text-gray-600 mt-2 leading-snug break-words">{note}</div> : null}
-        </div>
-
-        {kwhLabel && kwhValue ? (
-          <div className="mt-4 rounded-2xl border border-black/10 bg-gray-50 p-4">
-            <div className="text-xs text-gray-500">{kwhLabel}</div>
-            <div className="text-lg text-gray-900 mt-1 break-words">{kwhValue}</div>
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
+function fmtIntPdf(n: number) {
+  return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 }
 
 export default function ResultsPage() {
@@ -194,7 +83,6 @@ export default function ResultsPage() {
   const [pvgisLoading, setPvgisLoading] = useState(false);
   const [pvgisError, setPvgisError] = useState<string | null>(null);
 
-  const [ctaStatus, setCtaStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [pdfStatus, setPdfStatus] = useState<"idle" | "generating" | "error">("idle");
 
   useEffect(() => {
@@ -270,73 +158,12 @@ export default function ResultsPage() {
     return Math.round(annualProdForReco * 1.0);
   }, [annualProdForReco]);
 
-  const prodValoriseeStockage = useMemo(() => {
-    if (!annualProdForReco) return null;
-    return Math.round(annualProdForReco * 0.8);
-  }, [annualProdForReco]);
-
-  const autoconsommationSansBatterie = 50;
-  const tarifSurplus = 0.04;
-
   const techLine =
     techSummaryFromState ||
     `Gisement ${grade.grade} | Spécifique ${specific ?? "—"} kWh/kWc/an | Production estimée ${annualProdForReco ?? "—"} kWh/an`;
 
-  async function sendLead(extra: Record<string, any>) {
-    const payload = {
-      type: extra.type || "study_request",
-      callbackRequested: true,
-      callbackRequestedAt: new Date().toISOString(),
-      address: safeText(formData?.address),
-      lat,
-      lon: lng,
-      name: `${safeText(formData?.firstName)} ${safeText(formData?.lastName)}`.trim(),
-      phone: safeText(formData?.phone),
-      email: safeText(formData?.email),
-      powerRecommendation,
-      priceRange,
-      monthlyBill,
-      annualBillEuro,
-      amortissementRapideYears: amortRapide,
-      techSummary: techLine,
-      pvgis: pvgis || null,
-      ...extra,
-    };
-
-    const r = await fetch(`${FUNCTIONS_BASE}/.netlify/functions/lead`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    const j = await r.json().catch(() => null);
-    if (!r.ok || !j?.ok) throw new Error("Lead non envoyé");
-  }
-
-  async function requestFullStudy(trigger: string) {
-    if (ctaStatus === "sending" || ctaStatus === "sent") return;
-    setCtaStatus("sending");
-    try {
-      await sendLead({
-        type: "study_request",
-        studyType: "etude_technique_complete",
-        trigger,
-      });
-      setCtaStatus("sent");
-    } catch {
-      setCtaStatus("error");
-    }
-  }
-
-  // Genere la proposition commerciale PDF (page 1 personnalisee + pages 2-8
-  // officielles) a partir des donnees deja calculees sur cette page.
-  // Reutilise la meme formule que SavingsChart (production x prix du kWh,
-  // hausse de 3%/an, cumulee sur 30 ans) pour rester coherent avec le reste
-  // du site.
-  function fmtIntPdf(n: number) {
-    return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
-  }
-
+  // Genere une proposition commerciale PDF entierement construite en code
+  // (logo + textes + stats), sans dependre de fichiers externes fragiles.
   async function downloadProposalPdf() {
     if (pdfStatus === "generating") return;
     if (!powerRecommendation || !priceRange) return;
@@ -351,24 +178,20 @@ export default function ResultsPage() {
         economies30 += production * (PRIX_KWH_BASE * Math.pow(1.03, year));
       }
 
-      const [heroBytes, logoBytes, staticBytes] = await Promise.all([
-        fetch("/pdf-hero.jpg").then((r) => r.arrayBuffer()),
-        fetch("/logos/amy.png").then((r) => r.arrayBuffer()),
-        fetch("/pdf-static-pages.pdf").then((r) => r.arrayBuffer()),
-      ]);
+      const logoBytes = await fetch("/logos/amy.png").then((r) => r.arrayBuffer());
 
-      const PAGE_W = 841.92;
-      const PAGE_H = 594.96;
-      const MARGIN = 34;
+      const PAGE_W = 595.28;
+      const PAGE_H = 841.89;
+      const MARGIN = 48;
       const NAVY = rgb(23 / 255, 33 / 255, 98 / 255);
       const CORAL = rgb(224 / 255, 89 / 255, 46 / 255);
+      const GRAY = rgb(90 / 255, 95 / 255, 138 / 255);
       const WHITE = rgb(1, 1, 1);
-      const BLACK = rgb(0, 0, 0);
+      const DARK = rgb(0.2, 0.2, 0.25);
 
       const pdfDoc = await PDFDocument.create();
       const helv = await pdfDoc.embedFont(StandardFonts.Helvetica);
       const helvBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-      const heroImage = await pdfDoc.embedJpg(heroBytes);
       const logoImage = await pdfDoc.embedPng(logoBytes);
 
       const page = pdfDoc.addPage([PAGE_W, PAGE_H]);
@@ -377,58 +200,82 @@ export default function ResultsPage() {
       const lastName = safeText(formData?.lastName) || "Nom";
       const address = safeText(formData?.address) || "Adresse non renseignee";
 
-      page.drawImage(heroImage, { x: 0, y: 0, width: PAGE_W, height: PAGE_H });
+      page.drawRectangle({ x: 0, y: PAGE_H - 170, width: PAGE_W, height: 170, color: NAVY });
 
-      const logoW = 118;
-      const logoH = (118 * 138) / 349;
-      page.drawImage(logoImage, { x: MARGIN, y: PAGE_H - MARGIN - logoH, width: logoW, height: logoH });
+      const logoW = 110;
+      const logoH = (110 * 138) / 349;
+      page.drawImage(logoImage, { x: MARGIN, y: PAGE_H - 55 - logoH, width: logoW, height: logoH });
 
-      const topLabel = "PROPOSITION PHOTOVOLTAIQUE";
-      const topLabelW = helvBold.widthOfTextAtSize(topLabel, 9);
-      page.drawText(topLabel, { x: PAGE_W - MARGIN - topLabelW, y: PAGE_H - MARGIN - 8, size: 9, font: helvBold, color: WHITE });
+      page.drawText("PROPOSITION PHOTOVOLTAIQUE", {
+        x: MARGIN,
+        y: PAGE_H - 100,
+        size: 10,
+        font: helvBold,
+        color: rgb(0.75, 0.85, 1),
+      });
+      page.drawText(`${firstName} ${lastName}`, {
+        x: MARGIN,
+        y: PAGE_H - 125,
+        size: 20,
+        font: helvBold,
+        color: WHITE,
+      });
+      page.drawText(address, { x: MARGIN, y: PAGE_H - 148, size: 11, font: helv, color: rgb(0.85, 0.88, 1) });
 
-      const preparedY = PAGE_H * 0.62;
-      const addrLine = `${firstName} ${lastName} \u2014 ${address}`;
-      const headline1 = "Decouvrez votre projet";
-      const headline2 = "photovoltaique";
-
-      const wAddr = helv.widthOfTextAtSize(addrLine, 15);
-      const wH1 = helvBold.widthOfTextAtSize(headline1, 30);
-      const wH2 = helvBold.widthOfTextAtSize(headline2, 30);
-      const blockW = Math.max(wAddr, wH1, wH2) + 34;
-
-      page.drawRectangle({ x: MARGIN - 12, y: preparedY - 96, width: blockW, height: 128, color: BLACK, opacity: 0.3 });
-
-      page.drawText("PREPARE POUR", { x: MARGIN, y: preparedY + 26, size: 9, font: helvBold, color: WHITE });
-      page.drawText(addrLine, { x: MARGIN, y: preparedY, size: 15, font: helv, color: WHITE });
-      page.drawText(headline1, { x: MARGIN, y: preparedY - 45, size: 30, font: helvBold, color: WHITE });
-      page.drawText(headline2, { x: MARGIN, y: preparedY - 80, size: 30, font: helvBold, color: WHITE });
-
-      const boxY = 28;
-      const boxH = 118;
-      const boxGap = 14;
+      let y = PAGE_H - 220;
+      const boxH = 78;
+      const boxGap = 12;
       const boxW = (PAGE_W - 2 * MARGIN - 2 * boxGap) / 3;
-      const x1 = MARGIN;
-      const x2 = x1 + boxW + boxGap;
-      const x3 = x2 + boxW + boxGap;
 
       function statBox(x: number, label: string, value: string, sub: string, coral?: boolean) {
-        page.drawRectangle({ x, y: boxY, width: boxW, height: boxH, color: coral ? CORAL : WHITE, opacity: coral ? 0.92 : 0.82 });
-        const labelColor = coral ? WHITE : rgb(90 / 255, 95 / 255, 138 / 255);
-        const valueColor = coral ? WHITE : NAVY;
-        const subColor = coral ? rgb(250 / 255, 235 / 255, 227 / 255) : rgb(90 / 255, 95 / 255, 138 / 255);
-        page.drawText(label, { x: x + 18, y: boxY + boxH - 26, size: 9, font: helv, color: labelColor });
-        page.drawText(value, { x: x + 18, y: boxY + boxH - 60, size: 26, font: helvBold, color: valueColor });
-        page.drawText(sub, { x: x + 18, y: boxY + 16, size: 9, font: helv, color: subColor });
+        page.drawRectangle({ x, y, width: boxW, height: boxH, color: coral ? CORAL : rgb(0.96, 0.96, 0.98) });
+        page.drawText(label, { x: x + 12, y: y + boxH - 20, size: 7.5, font: helv, color: coral ? WHITE : GRAY });
+        page.drawText(value, { x: x + 12, y: y + boxH - 45, size: 16, font: helvBold, color: coral ? WHITE : NAVY });
+        page.drawText(sub, { x: x + 12, y: y + 12, size: 7.5, font: helv, color: coral ? rgb(1, 0.9, 0.85) : GRAY });
       }
 
-      statBox(x1, "PUISSANCE INSTALLEE", `${powerRecommendation.toFixed(2)} kWc`, `${panelsCount ?? "—"} panneaux estimes`);
-      statBox(x2, "PRODUCTION ANNUELLE", `${fmtIntPdf(production)} kWh`, "Sur votre toiture, chaque annee");
-      statBox(x3, "ECONOMIES TOTALES", `${fmtIntPdf(economies30)} \u20ac`, "sur 30 ans", true);
+      statBox(MARGIN, "PUISSANCE INSTALLEE", `${powerRecommendation.toFixed(2)} kWc`, `${panelsCount ?? "—"} panneaux estimes`);
+      statBox(MARGIN + boxW + boxGap, "PRODUCTION ANNUELLE", `${fmtIntPdf(production)} kWh`, "chaque annee");
+      statBox(MARGIN + 2 * (boxW + boxGap), "ECONOMIES ESTIMEES", `${fmtIntPdf(economies30)} €`, "sur 30 ans", true);
 
-      const staticDoc = await PDFDocument.load(staticBytes);
-      const copiedPages = await pdfDoc.copyPages(staticDoc, staticDoc.getPageIndices());
-      copiedPages.forEach((p) => pdfDoc.addPage(p));
+      y -= 46;
+      page.drawText("Votre potentiel solaire", { x: MARGIN, y, size: 14, font: helvBold, color: NAVY });
+      y -= 24;
+
+      const bodyLines = [
+        `Gisement solaire estime : ${grade.label} (${grade.grade}).`,
+        `Production specifique : ${specific ? fmtIntPdf(specific) + " kWh/kWc/an" : "—"}.`,
+        `Facture annuelle actuelle : ${annualBillEuro ? fmtIntPdf(annualBillEuro) + " €" : "—"}.`,
+        `Amortissement estime : ${amortRapide ? amortRapide.toFixed(1) + " ans" : "—"}.`,
+      ];
+      bodyLines.forEach((line) => {
+        page.drawText(line, { x: MARGIN, y, size: 11, font: helv, color: DARK });
+        y -= 18;
+      });
+
+      y -= 22;
+      page.drawText("Prochaines etapes", { x: MARGIN, y, size: 14, font: helvBold, color: NAVY });
+      y -= 24;
+
+      const steps = [
+        "1. Etude technique complete offerte par un conseiller AMY Energie.",
+        "2. Visite terrain et validation de la configuration finale.",
+        "3. Demarches administratives prises en charge (mairie, Consuel, raccordement).",
+        "4. Installation et mise en service.",
+      ];
+      steps.forEach((line) => {
+        page.drawText(line, { x: MARGIN, y, size: 11, font: helv, color: DARK });
+        y -= 18;
+      });
+
+      page.drawRectangle({ x: 0, y: 0, width: PAGE_W, height: 46, color: NAVY });
+      page.drawText("AMY ENERGIE  -  contact@amy-energie.fr  -  amy-energie.fr", {
+        x: MARGIN,
+        y: 18,
+        size: 9,
+        font: helv,
+        color: WHITE,
+      });
 
       const pdfBytes = await pdfDoc.save();
       const blob = new Blob([pdfBytes], { type: "application/pdf" });
@@ -445,27 +292,6 @@ export default function ResultsPage() {
     } catch (e) {
       console.error("PDF generation error:", e);
       setPdfStatus("error");
-    }
-  }
-
-  async function requestSofincoSimu() {
-    if (ctaStatus === "sending" || ctaStatus === "sent") return;
-    setCtaStatus("sending");
-    try {
-      await sendLead({
-        type: "financing_request",
-        financingPartner: "Sofinco",
-        financingExample: {
-          amount: 11000,
-          monthly: 182.26,
-          durationMonths: 72,
-          note: "intérêts compris",
-        },
-        trigger: "sofinco_button",
-      });
-      setCtaStatus("sent");
-    } catch {
-      setCtaStatus("error");
     }
   }
 
@@ -488,7 +314,7 @@ export default function ResultsPage() {
 
   return (
     <div className="min-h-screen bg-[#f6f4f1]">
-      <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
+      <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
         <div className="rounded-3xl overflow-hidden shadow-2xl border border-black/10 bg-white">
           <div className="relative">
             <div className="absolute inset-0 bg-gradient-to-br from-[#ff7a00] via-[#ffc400] to-[#2b7cff] opacity-16" />
@@ -565,127 +391,6 @@ export default function ResultsPage() {
                   <span className="text-red-600 text-xs">Échec de la génération, réessayez.</span>
                 )}
               </div>
-            </div>
-          </div>
-        </div>
-
-        <CtaBanner onClick={() => requestFullStudy("main_cta")} status={ctaStatus} />
-
-        <div className="rounded-3xl bg-white border border-black/10 shadow-xl p-7">
-          <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3">
-            <div>
-              <div className="text-[#0b2b6f] text-2xl">Proposition</div>
-              <div className="text-gray-600 text-sm mt-2">Classement conseillé pour maximiser l’AUTOCONSO.</div>
-            </div>
-            <div className="text-gray-600 text-sm">Surplus : {tarifSurplus.toFixed(2).replace(".", ",")} €/kWh</div>
-          </div>
-
-          <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <PodiumCard
-              rank={1}
-              title="Batterie virtuelle"
-              subtitle="Recommandé"
-              autoconso="100%"
-              kwhLabel="Production valorisée"
-              kwhValue={`${formatInt(prodValoriseeVirtuelle)} kWh/an`}
-            />
-            <PodiumCard
-              rank={2}
-              title="Batterie physique"
-              subtitle="Alternative"
-              autoconso="80%"
-              kwhLabel="Production valorisée"
-              kwhValue={`${formatInt(prodValoriseeStockage)} kWh/an`}
-            />
-            <PodiumCard
-              rank={3}
-              title="Sans batterie"
-              subtitle="Moins intéressant"
-              autoconso={`${autoconsommationSansBatterie}%`}
-              note={`La revente du surplus à ${tarifSurplus.toFixed(2).replace(".", ",")} €/kWh est généralement moins intéressante que l’AUTOCONSO.`}
-            />
-          </div>
-
-          <div className="mt-7 rounded-3xl border border-black/10 overflow-hidden bg-white">
-            <div className="relative">
-              <div className="absolute inset-0 bg-gradient-to-r from-[#ff7a00] via-[#ffc400] to-[#2b7cff] opacity-14" />
-              <div className="relative p-6">
-                <div className="text-[#0b2b6f] text-2xl">Auto-financement</div>
-                <div className="text-gray-700 text-sm mt-2 max-w-4xl">
-                  Exemple partenaire Sofinco pour un projet 6 kWc (11 000 €) : 182,26 €/mois sur 72 mois, intérêts compris.
-                </div>
-
-                <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div className="rounded-2xl bg-white border border-black/10 p-4 shadow-sm">
-                    <div className="text-gray-500 text-xs">Partenaire</div>
-                    <div className="text-[#0b2b6f] text-lg mt-1">Sofinco</div>
-                  </div>
-                  <div className="rounded-2xl bg-white border border-black/10 p-4 shadow-sm">
-                    <div className="text-gray-500 text-xs">Mensualité</div>
-                    <div className="text-[#0b2b6f] text-lg mt-1">182,26 €</div>
-                    <div className="text-gray-500 text-xs mt-1">intérêts compris</div>
-                  </div>
-                  <div className="rounded-2xl bg-white border border-black/10 p-4 shadow-sm">
-                    <div className="text-gray-500 text-xs">Durée</div>
-                    <div className="text-[#0b2b6f] text-lg mt-1">72 mois</div>
-                  </div>
-                </div>
-
-                <div className="mt-5 flex flex-col md:flex-row gap-3 md:items-center">
-                  <button
-                    onClick={requestSofincoSimu}
-                    disabled={ctaStatus === "sending" || ctaStatus === "sent"}
-                    className={`rounded-2xl px-5 py-3 text-white transition ${
-                      ctaStatus === "sent"
-                        ? "bg-[#0b2b6f]/65 cursor-not-allowed"
-                        : ctaStatus === "sending"
-                          ? "bg-[#0b2b6f]/65 cursor-wait"
-                          : "bg-[#0b2b6f] hover:opacity-90"
-                    }`}
-                  >
-                    {ctaStatus === "sent" ? "Demande envoyée" : ctaStatus === "sending" ? "Envoi…" : "Je veux une simulation Sofinco"}
-                  </button>
-
-                  <div className="text-gray-600 text-sm">
-                    Conditions selon profil, simulation finale pendant l’étude technique complète offerte.
-                  </div>
-                </div>
-
-                <div className="mt-5">
-                  <CtaBanner onClick={() => requestFullStudy("financing_cta")} status={ctaStatus} compact />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-7 rounded-3xl bg-[#0b2b6f] text-white p-6 border border-black/10">
-            <div className="text-2xl">Étapes de votre installation</div>
-            <div className="text-white/85 text-sm mt-2">AMY Énergie s’occupe de tout.</div>
-
-            <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {[
-                { t: "Étude", d: "Dimensionnement et validation" },
-                { t: "Visite technique", d: "Validation terrain" },
-                { t: "Demande mairie", d: "Démarches prises en charge" },
-                { t: "Installation", d: "Pose soignée et sécurisée" },
-                { t: "Consuel", d: "Conformité et validation" },
-                { t: "Raccordement", d: "Mise en service" },
-                { t: "Suivi", d: "Monitoring et suivi" },
-              ].map((s, i) => (
-                <div
-                  key={i}
-                  className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-sm transform-gpu transition hover:-translate-y-1 hover:shadow-xl"
-                  style={{ transform: "perspective(900px) rotateX(2deg) rotateY(-2deg)" }}
-                >
-                  <div className="text-xs text-white/70">Étape {i + 1}</div>
-                  <div className="text-white text-lg mt-1">{s.t}</div>
-                  <div className="text-white/85 text-sm mt-2">{s.d}</div>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-6">
-              <CtaBanner onClick={() => requestFullStudy("bottom_cta")} status={ctaStatus} compact />
             </div>
           </div>
         </div>
