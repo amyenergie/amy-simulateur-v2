@@ -9,8 +9,8 @@
 //    Tu y trouveras un ID du type AW-123456789 et un label du type AbC-D_efGHIjkLMN012.
 // 3. Colle ces deux valeurs ci-dessous, a la place des placeholders.
 
-export const GOOGLE_ADS_CONVERSION_ID = "AW-XXXXXXXXX"; // <-- remplace par ton ID (ex: AW-475707815)
-export const GOOGLE_ADS_CONVERSION_LABEL = "XXXXXXXXXXXXXXXXXXXXXX"; // <-- remplace par le label de l'action "Devis solaire complete"
+export const GOOGLE_ADS_CONVERSION_ID = "AW-16522842801";
+export const GOOGLE_ADS_CONVERSION_LABEL = "vWFzCKahv94cELGl2sY9";
 
 // Domaine du site principal, pour le cross-domain tracking (permet a Google Ads de
 // relier une conversion faite ici a un clic pub qui a atterri sur amy-energie.fr).
